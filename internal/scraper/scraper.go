@@ -1,8 +1,11 @@
 package scraper
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -10,7 +13,22 @@ import (
 	"github.com/jaki95/dj-set-downloader/pkg"
 )
 
-func Scrape(url string) (*pkg.Tracklist, error) {
+func GetTracklist(url string) (*pkg.Tracklist, error) {
+	var tracklist pkg.Tracklist
+
+	cachedFile, err := os.Open(fmt.Sprintf("/Users/jaki/Projects/dj-set-downloader/internal/scraper/cache/%s.json", strings.ReplaceAll(url, "/", "")))
+	if err == nil {
+		defer cachedFile.Close()
+		byteValue, err := io.ReadAll(cachedFile)
+		if err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(byteValue, &tracklist); err == nil {
+			fmt.Println("using cached data")
+			return &tracklist, nil
+		}
+	}
+
 	c := colly.NewCollector(
 		colly.AllowURLRevisit(),
 		colly.Async(false),
@@ -32,7 +50,6 @@ func Scrape(url string) (*pkg.Tracklist, error) {
 		log.Printf("Request URL: %v failed with response: %v\nError: %v", r.Request.URL, &r, err)
 	})
 
-	var tracklist pkg.Tracklist
 	trackCounter := 1
 
 	c.OnHTML("div.tlpTog", func(e *colly.HTMLElement) {
@@ -77,7 +94,7 @@ func Scrape(url string) (*pkg.Tracklist, error) {
 	})
 
 	// Visit the URL and scrape data
-	err := c.Visit(url)
+	err = c.Visit(url)
 	if err != nil {
 		for range 10 {
 			time.Sleep(2 * time.Second)
@@ -99,6 +116,16 @@ func Scrape(url string) (*pkg.Tracklist, error) {
 	// Validate we got all tracks
 	if len(tracklist.Tracks) == 0 {
 		return nil, fmt.Errorf("no tracks found in the tracklist")
+	}
+
+	jsonBytes, err := json.Marshal(tracklist)
+	if err != nil {
+		return nil, err
+	}
+
+	err = os.WriteFile(fmt.Sprintf("/Users/jaki/Projects/dj-set-downloader/internal/scraper/cache/%s.json", strings.ReplaceAll(url, "/", "")), jsonBytes, 0644)
+	if err != nil {
+		return nil, err
 	}
 
 	return &tracklist, nil

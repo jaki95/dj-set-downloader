@@ -11,19 +11,18 @@ import (
 
 func main() {
 	url := "https://www.1001tracklists.com/tracklist/1zgd4cst/adriatique-bbc-radio-1-essential-mix-2017-02-04.html"
-	// url := "https://www.1001tracklists.com/"
 
-	tracklist, err := scraper.Scrape(url)
+	tracklist, err := scraper.GetTracklist(url)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	albumName := "Adriatique - BBC Radio 1 Essential Mix - 2017-02-04"
-	inputFile := "Adriatique - BBC Radio 1 Essential Mix - 2017-02-04[medium].ogg"
+	inputFile := "/Users/jaki/Projects/dj-set-downloader/data/Adriatique - BBC Radio 1 Essential Mix - 2017-02-04[medium].ogg"
 
 	for i, t := range tracklist.Tracks {
 		safeTitle := sanitizeTitle(t.Title)
-		outputFile := fmt.Sprintf("%02d - %s.mp3", i+1, safeTitle)
+		outputFile := fmt.Sprintf("%02d - %s", i+1, safeTitle)
 
 		audioProcessor := audio.NewFFMPEGProcessor()
 
