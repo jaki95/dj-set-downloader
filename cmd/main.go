@@ -2,13 +2,12 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
 	"os"
-	"strings"
 
 	"github.com/jaki95/dj-set-downloader/internal/audio"
 	"github.com/jaki95/dj-set-downloader/internal/scraper"
+	"github.com/jaki95/dj-set-downloader/internal/tracklist"
 )
 
 func main() {
@@ -21,7 +20,7 @@ func main() {
 	// Validate required flags
 	if *urlFlag == "" || *setNameFlag == "" || *setArtistFlag == "" || *inputFlag == "" {
 		flag.Usage()
-		log.Fatal("url, album, and input flags are required")
+		log.Fatal("url, name, artist and input flags are required")
 	}
 
 	url := *urlFlag
@@ -29,7 +28,7 @@ func main() {
 	setArtist := *setArtistFlag
 	inputFile := *inputFlag
 
-	tracklist, err := scraper.GetTracklist(url)
+	tl, err := scraper.GetTracklist(url)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -41,28 +40,20 @@ func main() {
 		log.Fatal(err)
 	}
 
-	for i, t := range tracklist.Tracks {
-		safeTitle := sanitizeTitle(t.Title)
-		outputFile := fmt.Sprintf("%02d - %s", i+1, safeTitle)
+	tracklistProcessor := tracklist.NewProcessor(audioProcessor)
 
-		splitParams := audio.SplitParams{
-			InputPath:    inputFile,
-			OutputPath:   outputFile,
-			Track:        *t,
-			TrackCount:   len(tracklist.Tracks),
-			Artist:       setArtist,
-			Name:         setName,
-			CoverArtPath: cover,
-		}
-
-		audioProcessor.Split(splitParams)
-
+	if err := tracklistProcessor.ProcessTracks(
+		tl.Tracks,
+		&tracklist.ProcessOptions{
+			InputFile:          inputFile,
+			SetArtist:          setArtist,
+			SetName:            setName,
+			CoverArtPath:       cover,
+			MaxConcurrentTasks: 4,
+		},
+	); err != nil {
+		log.Fatal(err)
 	}
 
 	os.Remove(cover)
-}
-
-func sanitizeTitle(title string) string {
-	replacer := strings.NewReplacer("/", "-", ":", "-", "\"", "'", "?", "", "\\", "-", "|", "-")
-	return replacer.Replace(title)
 }
