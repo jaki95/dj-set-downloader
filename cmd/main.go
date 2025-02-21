@@ -7,62 +7,62 @@ import (
 	"os"
 
 	"github.com/jaki95/dj-set-downloader/internal/audio"
-	"github.com/jaki95/dj-set-downloader/internal/downloader"
-	"github.com/jaki95/dj-set-downloader/internal/scraper"
+	"github.com/jaki95/dj-set-downloader/internal/djset"
 	"github.com/jaki95/dj-set-downloader/internal/tracklist"
+	"github.com/jaki95/dj-set-downloader/pkg"
 )
 
 func main() {
-	tracklistURLFlag := flag.String("url", "", "Tracklist URL")
-	soundcloudURLFlag := flag.String("input", "", "Soundcloud URL")
-	setNameFlag := flag.String("name", "", "Set name")
-	setArtistFlag := flag.String("artist", "", "Set artist name")
+	tracklistURL := flag.String("tracklist-url", "", "URL to the tracklist source (required)")
+	soundcloudURL := flag.String("soundcloud-url", "", "URL of the SoundCloud DJ set (required)")
+	setName := flag.String("name", "", "Name of the DJ set (required)")
+	setArtist := flag.String("artist", "", "Artist name for the DJ set (required)")
+	maxWorkers := flag.Int("workers", 4, "Maximum concurrent processing tasks")
+
+	flag.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage of %s:\n", os.Args[0])
+		flag.PrintDefaults()
+	}
 	flag.Parse()
 
-	// Validate required flags
-	if *tracklistURLFlag == "" || *soundcloudURLFlag == "" || *setNameFlag == "" || *setArtistFlag == "" {
-		flag.Usage()
-		log.Fatal("url, name, artist and input flags are required")
+	// Validate required flags with explicit checks
+	if *tracklistURL == "" {
+		log.Fatal("Missing required flag: -tracklist-url")
+	}
+	if *soundcloudURL == "" {
+		log.Fatal("Missing required flag: -soundcloud-url")
+	}
+	if *setName == "" {
+		log.Fatal("Missing required flag: -set-name")
+	}
+	if *setArtist == "" {
+		log.Fatal("Missing required flag: -set-artist")
 	}
 
-	tracklistURL := *tracklistURLFlag
-	soundcloudURL := *soundcloudURLFlag
-	setName := *setNameFlag
-	setArtist := *setArtistFlag
-
-	tl, err := scraper.GetTracklist(tracklistURL)
+	cfg, err := pkg.LoadConfig("./config/config.yaml")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	cover := "./data/cover_temp.jpg"
-
-	err = downloader.Download(setName, soundcloudURL)
+	tracklistImporter, err := tracklist.NewImporter(cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	setPath := fmt.Sprintf("data/%s", setName)
+	audioProcessor := audio.NewFFMPEGEngine()
+	setProcessor := djset.NewProcessor(tracklistImporter, audioProcessor)
 
-	audioProcessor := audio.NewFFMPEGProcessor()
-	if err := audioProcessor.ExtractCoverArt(fmt.Sprintf("%s.mp3", setPath), cover); err != nil {
-		log.Fatal(err)
+	processingOptions := &djset.ProcessingOptions{
+		TracklistPath:      *tracklistURL,
+		DJSetURL:           *soundcloudURL,
+		InputFile:          fmt.Sprintf("%s.mp3", fmt.Sprintf("data/%s", *setName)),
+		SetArtist:          *setArtist,
+		SetName:            *setName,
+		CoverArtPath:       "./data/cover_temp.jpg",
+		MaxConcurrentTasks: *maxWorkers,
 	}
 
-	tracklistProcessor := tracklist.NewProcessor(audioProcessor)
-
-	if err := tracklistProcessor.ProcessTracks(
-		tl.Tracks,
-		&tracklist.ProcessOptions{
-			InputFile:          fmt.Sprintf("%s.mp3", setPath),
-			SetArtist:          setArtist,
-			SetName:            setName,
-			CoverArtPath:       cover,
-			MaxConcurrentTasks: 4,
-		},
-	); err != nil {
+	if err := setProcessor.ProcessTracks(processingOptions); err != nil {
 		log.Fatal(err)
 	}
-
-	os.Remove(cover)
 }
