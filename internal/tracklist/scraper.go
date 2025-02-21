@@ -1,4 +1,4 @@
-package scraper
+package tracklist
 
 import (
 	"encoding/json"
@@ -13,10 +13,16 @@ import (
 	"github.com/jaki95/dj-set-downloader/pkg"
 )
 
-func GetTracklist(url string) (*pkg.Tracklist, error) {
+type tracklists1001Scraper struct{}
+
+func NewTracklists1001Scraper() *tracklists1001Scraper {
+	return &tracklists1001Scraper{}
+}
+
+func (t *tracklists1001Scraper) Import(url string) (*pkg.Tracklist, error) {
 	var tracklist pkg.Tracklist
 
-	cachedFile, err := os.Open(fmt.Sprintf("./internal/scraper/cache/%s.json", strings.ReplaceAll(url, "/", "")))
+	cachedFile, err := os.Open(fmt.Sprintf("./internal/tracklist/cache/%s.json", strings.ReplaceAll(url, "/", "")))
 	if err == nil {
 		defer cachedFile.Close()
 		byteValue, err := io.ReadAll(cachedFile)
@@ -125,7 +131,7 @@ func GetTracklist(url string) (*pkg.Tracklist, error) {
 		return nil, err
 	}
 
-	err = os.WriteFile(fmt.Sprintf("./internal/scraper/cache/%s.json", strings.ReplaceAll(url, "/", "")), jsonBytes, 0644)
+	err = os.WriteFile(fmt.Sprintf("./internal/tracklist/cache/%s.json", strings.ReplaceAll(url, "/", "")), jsonBytes, 0644)
 	if err != nil {
 		return nil, err
 	}
