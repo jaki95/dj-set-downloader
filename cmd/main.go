@@ -2,41 +2,50 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"os"
 
 	"github.com/jaki95/dj-set-downloader/internal/audio"
+	"github.com/jaki95/dj-set-downloader/internal/downloader"
 	"github.com/jaki95/dj-set-downloader/internal/scraper"
 	"github.com/jaki95/dj-set-downloader/internal/tracklist"
 )
 
 func main() {
-	urlFlag := flag.String("url", "", "Tracklist URL")
+	tracklistURLFlag := flag.String("url", "", "Tracklist URL")
+	soundcloudURLFlag := flag.String("input", "", "Soundcloud URL")
 	setNameFlag := flag.String("name", "", "Set name")
 	setArtistFlag := flag.String("artist", "", "Set artist name")
-	inputFlag := flag.String("input", "", "Path to input audio file")
 	flag.Parse()
 
 	// Validate required flags
-	if *urlFlag == "" || *setNameFlag == "" || *setArtistFlag == "" || *inputFlag == "" {
+	if *tracklistURLFlag == "" || *soundcloudURLFlag == "" || *setNameFlag == "" || *setArtistFlag == "" {
 		flag.Usage()
 		log.Fatal("url, name, artist and input flags are required")
 	}
 
-	url := *urlFlag
+	tracklistURL := *tracklistURLFlag
+	soundcloudURL := *soundcloudURLFlag
 	setName := *setNameFlag
 	setArtist := *setArtistFlag
-	inputFile := *inputFlag
 
-	tl, err := scraper.GetTracklist(url)
+	tl, err := scraper.GetTracklist(tracklistURL)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	cover := "/Users/jaki/Projects/dj-set-downloader/cover_temp.jpg"
+	cover := "/Users/jaki/Projects/dj-set-downloader/data/cover_temp.jpg"
+
+	err = downloader.Download(setName, soundcloudURL)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	setPath := fmt.Sprintf("data/%s", setName)
 
 	audioProcessor := audio.NewFFMPEGProcessor()
-	if err := audioProcessor.ExtractCoverArt(inputFile, cover); err != nil {
+	if err := audioProcessor.ExtractCoverArt(fmt.Sprintf("%s.mp3", setPath), cover); err != nil {
 		log.Fatal(err)
 	}
 
@@ -45,7 +54,7 @@ func main() {
 	if err := tracklistProcessor.ProcessTracks(
 		tl.Tracks,
 		&tracklist.ProcessOptions{
-			InputFile:          inputFile,
+			InputFile:          fmt.Sprintf("%s.mp3", setPath),
 			SetArtist:          setArtist,
 			SetName:            setName,
 			CoverArtPath:       cover,
