@@ -1,8 +1,10 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 
 	"github.com/jaki95/dj-set-downloader/internal/audio"
@@ -10,16 +12,29 @@ import (
 )
 
 func main() {
-	url := "https://www.1001tracklists.com/tracklist/1zgd4cst/adriatique-bbc-radio-1-essential-mix-2017-02-04.html"
+	urlFlag := flag.String("url", "", "Tracklist URL")
+	setNameFlag := flag.String("name", "", "Set name")
+	setArtistFlag := flag.String("artist", "", "Set artist name")
+	inputFlag := flag.String("input", "", "Path to input audio file")
+	flag.Parse()
+
+	// Validate required flags
+	if *urlFlag == "" || *setNameFlag == "" || *setArtistFlag == "" || *inputFlag == "" {
+		flag.Usage()
+		log.Fatal("url, album, and input flags are required")
+	}
+
+	url := *urlFlag
+	setName := *setNameFlag
+	setArtist := *setArtistFlag
+	inputFile := *inputFlag
 
 	tracklist, err := scraper.GetTracklist(url)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	albumName := "Adriatique - BBC Radio 1 Essential Mix - 2017-02-04"
-	inputFile := "/Users/jaki/Projects/dj-set-downloader/data/Adriatique - BBC Radio 1 Essential Mix - 2017-02-04[medium].ogg"
-	cover := "/Users/jaki/Projects/dj-set-downloader/cover.jpg"
+	cover := "/Users/jaki/Projects/dj-set-downloader/cover_temp.jpg"
 
 	audioProcessor := audio.NewFFMPEGProcessor()
 	if err := audioProcessor.ExtractCoverArt(inputFile, cover); err != nil {
@@ -35,14 +50,16 @@ func main() {
 			OutputPath:   outputFile,
 			Track:        *t,
 			TrackCount:   len(tracklist.Tracks),
-			Artist:       "Adriatique",
-			Name:         albumName,
+			Artist:       setArtist,
+			Name:         setName,
 			CoverArtPath: cover,
 		}
 
 		audioProcessor.Split(splitParams)
 
 	}
+
+	os.Remove(cover)
 }
 
 func sanitizeTitle(title string) string {
