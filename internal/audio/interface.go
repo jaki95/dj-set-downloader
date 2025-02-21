@@ -3,6 +3,7 @@ package audio
 import "github.com/jaki95/dj-set-downloader/pkg"
 
 type Processor interface {
+	ExtractCoverArt(inputPath, coverPath string) error
 	Split(sp SplitParams) error
 }
 

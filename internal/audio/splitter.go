@@ -10,7 +10,7 @@ import (
 
 type ffmpeg struct{}
 
-func NewFFMPEGProcessor() *ffmpeg {
+func NewFFMPEGEngine() *ffmpeg {
 	return &ffmpeg{}
 }
 
