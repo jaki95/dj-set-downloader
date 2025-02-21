@@ -19,20 +19,25 @@ func main() {
 
 	albumName := "Adriatique - BBC Radio 1 Essential Mix - 2017-02-04"
 	inputFile := "/Users/jaki/Projects/dj-set-downloader/data/Adriatique - BBC Radio 1 Essential Mix - 2017-02-04[medium].ogg"
+	cover := "/Users/jaki/Projects/dj-set-downloader/cover.jpg"
+
+	audioProcessor := audio.NewFFMPEGProcessor()
+	if err := audioProcessor.ExtractCoverArt(inputFile, cover); err != nil {
+		log.Fatal(err)
+	}
 
 	for i, t := range tracklist.Tracks {
 		safeTitle := sanitizeTitle(t.Title)
 		outputFile := fmt.Sprintf("%02d - %s", i+1, safeTitle)
 
-		audioProcessor := audio.NewFFMPEGProcessor()
-
 		splitParams := audio.SplitParams{
-			InputPath:  inputFile,
-			OutputPath: outputFile,
-			Track:      *t,
-			TrackCount: len(tracklist.Tracks),
-			Artist:     "Adriatique",
-			Name:       albumName,
+			InputPath:    inputFile,
+			OutputPath:   outputFile,
+			Track:        *t,
+			TrackCount:   len(tracklist.Tracks),
+			Artist:       "Adriatique",
+			Name:         albumName,
+			CoverArtPath: cover,
 		}
 
 		audioProcessor.Split(splitParams)

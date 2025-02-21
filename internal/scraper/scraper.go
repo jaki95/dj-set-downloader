@@ -110,7 +110,7 @@ func GetTracklist(url string) (*pkg.Tracklist, error) {
 	// Handle last track
 	if len(tracklist.Tracks) > 0 {
 		lastTrack := tracklist.Tracks[len(tracklist.Tracks)-1]
-		lastTrack.EndTime = lastTrack.StartTime + "+5:00"
+		lastTrack.EndTime = ""
 	}
 
 	// Validate we got all tracks

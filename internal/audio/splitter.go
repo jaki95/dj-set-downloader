@@ -14,7 +14,13 @@ func NewFFMPEGProcessor() *ffmpeg {
 	return &ffmpeg{}
 }
 
+func (f *ffmpeg) ExtractCoverArt(inputPath, coverPath string) error {
+	cmd := exec.Command("ffmpeg", "-y", "-i", inputPath, "-map", "0:v:0", "-c:v", "mjpeg", "-vframes", "1", coverPath)
+	return cmd.Run()
+}
+
 func (f *ffmpeg) Split(opts SplitParams) error {
+	// Calculate start time and duration
 	startSeconds, err := timeToSeconds(opts.Track.StartTime)
 	if err != nil {
 		return fmt.Errorf("error parsing start time for track %d: %w", opts.Track.TrackNumber, err)
@@ -29,25 +35,47 @@ func (f *ffmpeg) Split(opts SplitParams) error {
 		duration = endSeconds - startSeconds
 	}
 
-	args := []string{
+	// Define temporary file path for the audio segment
+	tempAudio := fmt.Sprintf("%s_temp.m4a", opts.OutputPath)
+
+	// First pass: Extract audio segment (without cover art)
+	pass1Args := []string{
 		"-y",
-		// Step 1: Extract cover art from the original input
 		"-i", opts.InputPath,
-		"-map", "0:a", // Map audio
-		"-map", "0:v:0", // Map cover art
-		"-c:a", "aac", // Set audio codec explicitly
-		"-b:a", "128k", // Audio bitrate
-		"-c:v", "mjpeg", // Set video codec for cover art
-		"-disposition:v:0", "attached_pic", // Mark it as album artwork
 		"-ss", fmt.Sprintf("%.3f", startSeconds),
 	}
 	if duration > 0 {
-		args = append(args, "-t", fmt.Sprintf("%.3f", duration))
+		pass1Args = append(pass1Args, "-t", fmt.Sprintf("%.3f", duration))
 	}
-	args = append(args, []string{
+	pass1Args = append(pass1Args, []string{
+		"-map", "0:a",
+		"-c:a", "aac",
+		"-b:a", "128k",
 		"-af", "aresample=async=1",
 		"-movflags", "+faststart",
-		"-f", "mp4",
+		"-id3v2_version", "3",
+		tempAudio,
+	}...)
+
+	cmd1 := exec.Command("ffmpeg", pass1Args...)
+	cmd1.Stderr = os.Stderr
+	cmd1.Stdout = os.Stdout
+	if err := cmd1.Run(); err != nil {
+		return fmt.Errorf("first pass (audio extraction) failed: %w", err)
+	}
+
+	// Second pass: Reattach cover art to the extracted audio segment
+	pass2Args := []string{
+		"-y",
+		"-i", tempAudio,
+		"-i", opts.CoverArtPath,
+		"-map", "0:a", // Map audio from temp file
+		"-map", "1:v", // Map cover art from opts.CoverArtPath
+		"-c:a", "copy", // Copy audio stream from the temp file
+		"-c:v", "mjpeg", // Encode cover art as MJPEG
+		"-disposition:v:0", "attached_pic", // Mark cover art as attached picture
+		"-movflags", "+faststart",
+		"-id3v2_version", "3",
 		"-metadata", fmt.Sprintf("album_artist=%s", opts.Artist),
 		"-metadata", fmt.Sprintf("artist=%s", opts.Track.Artist),
 		"-metadata", fmt.Sprintf("title=%s", opts.Track.Title),
@@ -57,13 +85,20 @@ func (f *ffmpeg) Split(opts SplitParams) error {
 		"-metadata:s:v", "comment=Cover (front)",
 		"-metadata", "compilation=1",
 		fmt.Sprintf("%s.m4a", opts.OutputPath),
-	}...)
+	}
 
-	cmd := exec.Command("ffmpeg", args...)
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
+	cmd2 := exec.Command("ffmpeg", pass2Args...)
+	cmd2.Stderr = os.Stderr
+	cmd2.Stdout = os.Stdout
 
-	return cmd.Run()
+	if err := cmd2.Run(); err != nil {
+		return fmt.Errorf("second pass (cover art attachment) failed: %w", err)
+	}
+
+	// Remove the temporary file
+	os.Remove(tempAudio)
+
+	return nil
 }
 
 // TimeToSeconds converts a timestamp like "1:23:45" or "45:23" to seconds
