@@ -35,7 +35,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	cover := "/Users/jaki/Projects/dj-set-downloader/data/cover_temp.jpg"
+	cover := "./data/cover_temp.jpg"
 
 	err = downloader.Download(setName, soundcloudURL)
 	if err != nil {

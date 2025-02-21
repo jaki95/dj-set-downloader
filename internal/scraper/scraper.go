@@ -16,7 +16,7 @@ import (
 func GetTracklist(url string) (*pkg.Tracklist, error) {
 	var tracklist pkg.Tracklist
 
-	cachedFile, err := os.Open(fmt.Sprintf("/Users/jaki/Projects/dj-set-downloader/internal/scraper/cache/%s.json", strings.ReplaceAll(url, "/", "")))
+	cachedFile, err := os.Open(fmt.Sprintf("./internal/scraper/cache/%s.json", strings.ReplaceAll(url, "/", "")))
 	if err == nil {
 		defer cachedFile.Close()
 		byteValue, err := io.ReadAll(cachedFile)
@@ -125,7 +125,7 @@ func GetTracklist(url string) (*pkg.Tracklist, error) {
 		return nil, err
 	}
 
-	err = os.WriteFile(fmt.Sprintf("/Users/jaki/Projects/dj-set-downloader/internal/scraper/cache/%s.json", strings.ReplaceAll(url, "/", "")), jsonBytes, 0644)
+	err = os.WriteFile(fmt.Sprintf("./internal/scraper/cache/%s.json", strings.ReplaceAll(url, "/", "")), jsonBytes, 0644)
 	if err != nil {
 		return nil, err
 	}
