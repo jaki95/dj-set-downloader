@@ -2,8 +2,11 @@ package tracklist
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"sync"
+
+	"github.com/schollz/progressbar/v3"
 
 	"github.com/jaki95/dj-set-downloader/internal/audio"
 	"github.com/jaki95/dj-set-downloader/pkg"
@@ -31,14 +34,28 @@ func (p *processor) ProcessTracks(tracks []*pkg.Track, opts *ProcessOptions) err
 	var wg sync.WaitGroup
 	semaphore := make(chan struct{}, opts.MaxConcurrentTasks)
 
+	err := os.MkdirAll(fmt.Sprintf("output/%s", opts.SetName), os.ModePerm)
+	if err != nil {
+		return err
+	}
+
+	bar := progressbar.NewOptions(
+		len(tracks),
+		progressbar.OptionFullWidth(),
+		progressbar.OptionShowCount(),
+		progressbar.OptionSetDescription("Processing tracks..."),
+		progressbar.OptionSetTheme(progressbar.ThemeASCII),
+	)
+
 	for i, t := range tracks {
 		wg.Add(1)
 		go func(i int, t *pkg.Track) {
+			defer bar.Add(1)
 			defer wg.Done()
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
 			safeTitle := sanitizeTitle(t.Title)
-			outputFile := fmt.Sprintf("%02d - %s", i+1, safeTitle)
+			outputFile := fmt.Sprintf("output/%s/%02d - %s", opts.SetName, i+1, safeTitle)
 
 			splitParams := audio.SplitParams{
 				InputPath:    opts.InputFile,
