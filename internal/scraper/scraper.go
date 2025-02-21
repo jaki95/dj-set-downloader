@@ -24,7 +24,7 @@ func GetTracklist(url string) (*pkg.Tracklist, error) {
 			return nil, err
 		}
 		if err := json.Unmarshal(byteValue, &tracklist); err == nil {
-			fmt.Println("using cached data")
+			fmt.Println("Using cached tracklist data...")
 			return &tracklist, nil
 		}
 	}
@@ -92,6 +92,8 @@ func GetTracklist(url string) (*pkg.Tracklist, error) {
 		tracklist.Tracks = append(tracklist.Tracks, track)
 		trackCounter++
 	})
+
+	fmt.Println("Fetching tracklist data...")
 
 	// Visit the URL and scrape data
 	err = c.Visit(url)

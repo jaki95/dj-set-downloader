@@ -57,10 +57,11 @@ func (f *ffmpeg) Split(opts SplitParams) error {
 		tempAudio,
 	}...)
 
-	cmd1 := exec.Command("ffmpeg", pass1Args...)
-	cmd1.Stderr = os.Stderr
-	cmd1.Stdout = os.Stdout
-	if err := cmd1.Run(); err != nil {
+	cmd := exec.Command("ffmpeg", pass1Args...)
+	// cmd.Stdout = os.Stdout
+	// cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("first pass (audio extraction) failed: %w", err)
 	}
 
@@ -87,11 +88,9 @@ func (f *ffmpeg) Split(opts SplitParams) error {
 		fmt.Sprintf("%s.m4a", opts.OutputPath),
 	}
 
-	cmd2 := exec.Command("ffmpeg", pass2Args...)
-	cmd2.Stderr = os.Stderr
-	cmd2.Stdout = os.Stdout
+	cmd = exec.Command("ffmpeg", pass2Args...)
 
-	if err := cmd2.Run(); err != nil {
+	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("second pass (cover art attachment) failed: %w", err)
 	}
 
