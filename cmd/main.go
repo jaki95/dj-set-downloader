@@ -14,9 +14,7 @@ import (
 
 func main() {
 	tracklistURL := flag.String("tracklist-url", "", "URL to the tracklist source (required)")
-	soundcloudURL := flag.String("soundcloud-url", "", "URL of the SoundCloud DJ set (required)")
-	setName := flag.String("name", "", "Name of the DJ set (required)")
-	setArtist := flag.String("artist", "", "Artist name for the DJ set (required)")
+	soundcloudURL := flag.String("soundcloud-url", "", "URL of the SoundCloud DJ set (optional)")
 	maxWorkers := flag.Int("workers", 4, "Maximum concurrent processing tasks")
 
 	flag.Usage = func() {
@@ -28,15 +26,6 @@ func main() {
 	// Validate required flags with explicit checks
 	if *tracklistURL == "" {
 		log.Fatal("Missing required flag: -tracklist-url")
-	}
-	if *soundcloudURL == "" {
-		log.Fatal("Missing required flag: -soundcloud-url")
-	}
-	if *setName == "" {
-		log.Fatal("Missing required flag: -set-name")
-	}
-	if *setArtist == "" {
-		log.Fatal("Missing required flag: -set-artist")
 	}
 
 	cfg, err := pkg.LoadConfig("./config/config.yaml")
@@ -55,9 +44,6 @@ func main() {
 	processingOptions := &djset.ProcessingOptions{
 		TracklistPath:      *tracklistURL,
 		DJSetURL:           *soundcloudURL,
-		InputFile:          fmt.Sprintf("%s.mp3", fmt.Sprintf("data/%s", *setName)),
-		SetArtist:          *setArtist,
-		SetName:            *setName,
 		CoverArtPath:       "./data/cover_temp.jpg",
 		MaxConcurrentTasks: *maxWorkers,
 	}
