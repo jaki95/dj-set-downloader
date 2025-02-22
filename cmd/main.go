@@ -9,6 +9,7 @@ import (
 
 	"github.com/jaki95/dj-set-downloader/internal/audio"
 	"github.com/jaki95/dj-set-downloader/internal/djset"
+	"github.com/jaki95/dj-set-downloader/internal/downloader"
 	"github.com/jaki95/dj-set-downloader/internal/tracklist"
 	"github.com/jaki95/dj-set-downloader/pkg"
 )
@@ -45,8 +46,14 @@ func main() {
 		return
 	}
 
+	setDownloader, err := downloader.NewDownloader(cfg)
+	if err != nil {
+		slog.Error(err.Error())
+		return
+	}
+
 	audioProcessor := audio.NewFFMPEGEngine()
-	setProcessor := djset.NewProcessor(tracklistImporter, audioProcessor)
+	setProcessor := djset.NewProcessor(tracklistImporter, setDownloader, audioProcessor)
 
 	processingOptions := &djset.ProcessingOptions{
 		TracklistPath:      *tracklistURL,

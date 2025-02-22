@@ -19,15 +19,18 @@ import (
 
 type processor struct {
 	tracklistImporter tracklist.Importer
+	setDownloader     downloader.Downloader
 	audioProcessor    audio.Processor
 }
 
 func NewProcessor(
 	tracklistImporter tracklist.Importer,
+	setDownloader downloader.Downloader,
 	audioProcessor audio.Processor,
 ) *processor {
 	return &processor{
 		tracklistImporter: tracklistImporter,
+		setDownloader:     setDownloader,
 		audioProcessor:    audioProcessor,
 	}
 }
@@ -45,19 +48,16 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions) error {
 		return err
 	}
 
-	scClient, err := downloader.NewSoundCloudClient()
-	if err != nil {
-		return err
-	}
+	findQuery := fmt.Sprintf("%s %s", set.Name, set.Artist)
 
-	url, err := scClient.Search(fmt.Sprintf("%s %s", set.Name, set.Artist))
+	url, err := p.setDownloader.FindURL(findQuery)
 	if err != nil {
 		return err
 	}
 
 	slog.Debug("found match", "url", url)
 
-	err = downloader.Download(set.Name, url)
+	err = p.setDownloader.Download(url, set.Name)
 	if err != nil {
 		return err
 	}
