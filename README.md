@@ -6,8 +6,8 @@ Download DJ sets and automatically split them into individual tracks based on a 
 
 ## Dependencies
 
-* ffmpeg
-* scdl
+* [ffmpeg](https://github.com/FFmpeg/FFmpeg)
+* [scdl](https://github.com/scdl-org/scdl)
 
 ## Usage
 
