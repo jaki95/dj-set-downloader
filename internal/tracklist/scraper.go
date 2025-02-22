@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"os"
 	"regexp"
 	"strings"
@@ -33,7 +34,7 @@ func (t *tracklists1001Scraper) Import(url string) (*pkg.Tracklist, error) {
 			return nil, err
 		}
 		if err := json.Unmarshal(byteValue, &tracklist); err == nil {
-			fmt.Println("Using cached tracklist data...")
+			slog.Debug("Using cached tracklist data...")
 			return &tracklist, nil
 		}
 	}
@@ -127,8 +128,8 @@ func (t *tracklists1001Scraper) Import(url string) (*pkg.Tracklist, error) {
 			setName = matches[1]
 		}
 
-		fmt.Println("Extracted Artists:", artists)
-		fmt.Println("Extracted Set Name:", setName)
+		slog.Info("Extracted artists", "artists", artists)
+		slog.Info("Extracted Set Name", "setName", setName)
 
 		tracklist.Artist = strings.Join(artists, " & ")
 		tracklist.Name = setName

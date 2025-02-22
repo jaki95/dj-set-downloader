@@ -1,2 +1,3 @@
+log_level: -4
 audio_processor: ffmpeg
 tracklist_source: 1001tracklists

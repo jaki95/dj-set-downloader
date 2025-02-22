@@ -3,10 +3,12 @@ package djset
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
 
+	"github.com/k0kubun/go-ansi"
 	"github.com/schollz/progressbar/v3"
 
 	"github.com/jaki95/dj-set-downloader/internal/audio"
@@ -53,7 +55,7 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions) error {
 		return err
 	}
 
-	fmt.Println(url)
+	slog.Debug("found match", "url", url)
 
 	err = downloader.Download(set.Name, url)
 	if err != nil {
@@ -75,9 +77,12 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions) error {
 
 	bar := progressbar.NewOptions(
 		len(set.Tracks),
+		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
+		progressbar.OptionEnableColorCodes(true),
+		progressbar.OptionSetTheme(progressbar.ThemeASCII),
 		progressbar.OptionFullWidth(),
 		progressbar.OptionShowCount(),
-		progressbar.OptionSetDescription("Processing tracks..."),
+		progressbar.OptionSetDescription("[cyan][2/2][reset] Processing tracks..."),
 	)
 
 	var wg sync.WaitGroup

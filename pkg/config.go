@@ -7,6 +7,7 @@ import (
 )
 
 type Config struct {
+	LogLevel        int    `yaml:"log_level"`
 	AudioProcessor  string `yaml:"audio_processor"`
 	TracklistSource string `yaml:"tracklist_source"`
 }

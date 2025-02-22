@@ -3,8 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"os"
+
+	"log/slog"
 
 	"github.com/jaki95/dj-set-downloader/internal/audio"
 	"github.com/jaki95/dj-set-downloader/internal/djset"
@@ -25,17 +26,22 @@ func main() {
 
 	// Validate required flags with explicit checks
 	if *tracklistURL == "" {
-		log.Fatal("Missing required flag: -tracklist-url")
+		slog.Error("Missing required flag: -tracklist-url")
+		return
 	}
 
 	cfg, err := pkg.LoadConfig("./config/config.yaml")
 	if err != nil {
-		log.Fatal(err)
+		slog.Error(err.Error())
+		return
 	}
+
+	slog.SetLogLoggerLevel(slog.Level(cfg.LogLevel))
 
 	tracklistImporter, err := tracklist.NewImporter(cfg)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error(err.Error())
+		return
 	}
 
 	audioProcessor := audio.NewFFMPEGEngine()
@@ -49,6 +55,7 @@ func main() {
 	}
 
 	if err := setProcessor.ProcessTracks(processingOptions); err != nil {
-		log.Fatal(err)
+		slog.Error(err.Error())
+		return
 	}
 }

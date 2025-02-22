@@ -4,16 +4,16 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log/slog"
 	"os/exec"
 	"regexp"
 	"strconv"
 
+	"github.com/k0kubun/go-ansi"
 	"github.com/schollz/progressbar/v3"
 )
 
 func Download(setName, url string) error {
-	fmt.Println("Downloading set...")
-
 	cmd := exec.Command("scdl", "-l", url, "--name-format", setName, "--path", "data")
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -22,9 +22,12 @@ func Download(setName, url string) error {
 	cmd.Stderr = cmd.Stdout
 
 	bar := progressbar.NewOptions(100,
+		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
+		progressbar.OptionEnableColorCodes(true),
+		progressbar.OptionSetTheme(progressbar.ThemeASCII),
 		progressbar.OptionFullWidth(),
 		progressbar.OptionShowCount(),
-		progressbar.OptionSetDescription("Downloading set..."),
+		progressbar.OptionSetDescription("[cyan][1/2][reset] Downloading set..."),
 	)
 
 	if err := cmd.Start(); err != nil {
@@ -50,6 +53,10 @@ func readOutputAndRenderBar(stdout io.ReadCloser, bar *progressbar.ProgressBar) 
 	var lastProgress float64
 
 	for {
+		if lastProgress == 100 {
+			fmt.Println()
+			break
+		}
 		n, err := stdout.Read(output)
 		if err != nil {
 			if err == io.EOF {
@@ -68,7 +75,7 @@ func readOutputAndRenderBar(stdout io.ReadCloser, bar *progressbar.ProgressBar) 
 
 			// Filter out progress lines
 			if !progressRe.MatchString(line) {
-				fmt.Println(line)
+				slog.Debug(line)
 			}
 
 			// Update progress bar
