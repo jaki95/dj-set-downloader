@@ -6,9 +6,11 @@ import (
 	"io"
 	"log"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
+	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly"
 	"github.com/jaki95/dj-set-downloader/pkg"
 )
@@ -22,6 +24,7 @@ func NewTracklists1001Scraper() *tracklists1001Scraper {
 func (t *tracklists1001Scraper) Import(url string) (*pkg.Tracklist, error) {
 	var tracklist pkg.Tracklist
 
+	// Attempt to load from cache
 	cachedFile, err := os.Open(fmt.Sprintf("./internal/tracklist/cache/%s.json", strings.ReplaceAll(url, "/", "")))
 	if err == nil {
 		defer cachedFile.Close()
@@ -40,6 +43,7 @@ func (t *tracklists1001Scraper) Import(url string) (*pkg.Tracklist, error) {
 		colly.Async(false),
 	)
 
+	// Set headers
 	c.OnRequest(func(r *colly.Request) {
 		r.Headers.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
 		r.Headers.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
@@ -56,8 +60,10 @@ func (t *tracklists1001Scraper) Import(url string) (*pkg.Tracklist, error) {
 		log.Printf("Request URL: %v failed with response: %v\nError: %v", r.Request.URL, &r, err)
 	})
 
+	// Counter for track numbering
 	trackCounter := 1
 
+	// Extract track information
 	c.OnHTML("div.tlpTog", func(e *colly.HTMLElement) {
 		// Extract timestamp
 		startTime := strings.TrimSpace(e.ChildText("div.cue.noWrap.action.mt5"))
@@ -99,38 +105,66 @@ func (t *tracklists1001Scraper) Import(url string) (*pkg.Tracklist, error) {
 		trackCounter++
 	})
 
+	// Extract artist names and set name from the page title
+	c.OnHTML("div#pageTitle h1", func(e *colly.HTMLElement) {
+		// Get full text from the <h1>
+		fullText := e.Text
+		// Extract artist names by looking for <a> elements with href containing "/dj/"
+		var artists []string
+		e.DOM.Find("a").Each(func(i int, s *goquery.Selection) {
+			// Using goquery's equivalent for colly's DOM element
+			href, exists := s.Attr("href")
+			if exists && strings.HasPrefix(href, "/dj/") {
+				artists = append(artists, s.Text())
+			}
+		})
+
+		// Extract set name using regex - text after '@' or '-' including the date
+		re := regexp.MustCompile(`[@-] (.+) \d{4}`)
+		matches := re.FindStringSubmatch(fullText)
+		setName := ""
+		if len(matches) > 1 {
+			setName = matches[1]
+		}
+
+		fmt.Println("Extracted Artists:", artists)
+		fmt.Println("Extracted Set Name:", setName)
+
+		tracklist.Artist = strings.Join(artists, " & ")
+		tracklist.Name = setName
+	})
+
 	fmt.Println("Fetching tracklist data...")
 
 	// Visit the URL and scrape data
 	err = c.Visit(url)
 	if err != nil {
+		// Retry logic
 		for range 10 {
 			time.Sleep(2 * time.Second)
 			err = c.Visit(url)
-
 		}
 		if err != nil {
 			return nil, fmt.Errorf("failed after retry: %w", err)
 		}
-
 	}
 
-	// Handle last track
+	// Handle last track's end time
 	if len(tracklist.Tracks) > 0 {
 		lastTrack := tracklist.Tracks[len(tracklist.Tracks)-1]
 		lastTrack.EndTime = ""
 	}
 
-	// Validate we got all tracks
+	// Validate we got tracks
 	if len(tracklist.Tracks) == 0 {
 		return nil, fmt.Errorf("no tracks found in the tracklist")
 	}
 
+	// Cache the result
 	jsonBytes, err := json.Marshal(tracklist)
 	if err != nil {
 		return nil, err
 	}
-
 	err = os.WriteFile(fmt.Sprintf("./internal/tracklist/cache/%s.json", strings.ReplaceAll(url, "/", "")), jsonBytes, 0644)
 	if err != nil {
 		return nil, err
