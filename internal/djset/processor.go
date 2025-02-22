@@ -1,8 +1,8 @@
 package djset
 
 import (
+	"context"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"sync"
@@ -43,7 +43,7 @@ type ProcessingOptions struct {
 func (p *processor) ProcessTracks(opts *ProcessingOptions) error {
 	err := downloader.Download(opts.SetName, opts.DJSetURL)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	tl, err := p.tracklistImporter.Import(opts.TracklistPath)
@@ -57,9 +57,6 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions) error {
 
 	defer os.Remove(opts.CoverArtPath)
 
-	var wg sync.WaitGroup
-	semaphore := make(chan struct{}, opts.MaxConcurrentTasks)
-
 	err = os.MkdirAll(fmt.Sprintf("output/%s", opts.SetName), os.ModePerm)
 	if err != nil {
 		return err
@@ -70,15 +67,36 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions) error {
 		progressbar.OptionFullWidth(),
 		progressbar.OptionShowCount(),
 		progressbar.OptionSetDescription("Processing tracks..."),
-		progressbar.OptionSetTheme(progressbar.ThemeASCII),
 	)
+
+	var wg sync.WaitGroup
+	semaphore := make(chan struct{}, opts.MaxConcurrentTasks)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
 
 	for i, t := range tl.Tracks {
 		wg.Add(1)
 		go func(i int, t *pkg.Track) {
-			defer bar.Add(1)
-			defer wg.Done()
-			semaphore <- struct{}{}
+			defer func() {
+				bar.Add(1)
+				wg.Done()
+			}()
+
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			select {
+			case semaphore <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+
 			defer func() { <-semaphore }()
 			safeTitle := sanitizeTitle(t.Title)
 			outputFile := fmt.Sprintf("output/%s/%02d - %s", opts.SetName, i+1, safeTitle)
@@ -93,15 +111,27 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions) error {
 				CoverArtPath: opts.CoverArtPath,
 			}
 
-			p.audioProcessor.Split(splitParams)
+			if splitErr := p.audioProcessor.Split(splitParams); splitErr != nil {
+				select {
+				case errCh <- fmt.Errorf("track %d (%s): %w", i+1, t.Title, err):
+					cancel()
+				default:
+				}
+			}
 		}(i, t)
 
 	}
 
-	wg.Wait()
+	go func() {
+		wg.Wait()
+		close(errCh)
+	}()
+
+	if err := <-errCh; err != nil {
+		return err
+	}
 
 	return nil
-
 }
 
 func sanitizeTitle(title string) string {
