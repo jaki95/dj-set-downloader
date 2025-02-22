@@ -36,7 +36,8 @@ func main() {
 		return
 	}
 
-	slog.SetLogLoggerLevel(slog.Level(cfg.LogLevel))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.Level(cfg.LogLevel)}))
+	slog.SetDefault(logger)
 
 	tracklistImporter, err := tracklist.NewImporter(cfg)
 	if err != nil {

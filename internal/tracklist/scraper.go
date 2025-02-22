@@ -135,7 +135,7 @@ func (t *tracklists1001Scraper) Import(url string) (*pkg.Tracklist, error) {
 		tracklist.Name = setName
 	})
 
-	fmt.Println("Fetching tracklist data...")
+	slog.Info("Fetching tracklist data...")
 
 	// Visit the URL and scrape data
 	err = c.Visit(url)

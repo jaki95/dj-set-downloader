@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -26,6 +27,7 @@ func NewSoundCloudClient() (*soundCloudClient, error) {
 }
 
 func (s *soundCloudClient) Search(query string) (string, error) {
+	slog.Debug("searching soundcloud for set", "query", query)
 	encodedQuery := url.QueryEscape(query)
 	res, err := http.Get(fmt.Sprintf("%s/search?q=%s&client_id=%s", s.baseURL, encodedQuery, s.clientID))
 	if err != nil {
