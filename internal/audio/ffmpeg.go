@@ -38,64 +38,91 @@ func (f *ffmpeg) Split(opts SplitParams) error {
 	// Define temporary file path for the audio segment
 	tempAudio := fmt.Sprintf("%s_temp.m4a", opts.OutputPath)
 
-	// First pass: Extract audio segment (without cover art)
-	pass1Args := []string{
-		"-y",
-		"-i", opts.InputPath,
+	defer os.Remove(tempAudio)
+
+	// First pass: Extract audio segment
+	if err := f.extractAudio(opts.InputPath, startSeconds, duration, tempAudio); err != nil {
+		return err
+	}
+
+	// Second pass: Attach metadata and cover art
+	finalPath := fmt.Sprintf("%s.m4a", opts.OutputPath)
+
+	return f.addMetadataAndCover(tempAudio, finalPath, opts)
+}
+
+func (f *ffmpeg) extractAudio(inputPath string, startSeconds, duration float64, outputPath string) error {
+	args := []string{
+		"-y", "-i", inputPath,
 		"-ss", fmt.Sprintf("%.3f", startSeconds),
 	}
+
 	if duration > 0 {
-		pass1Args = append(pass1Args, "-t", fmt.Sprintf("%.3f", duration))
+		args = append(args, "-t", fmt.Sprintf("%.3f", duration))
 	}
-	pass1Args = append(pass1Args, []string{
+
+	args = append(args,
 		"-map", "0:a",
 		"-c:a", "aac",
 		"-b:a", "128k",
 		"-af", "aresample=async=1",
 		"-movflags", "+faststart",
 		"-id3v2_version", "3",
-		tempAudio,
-	}...)
+		outputPath,
+	)
 
-	cmd := exec.Command("ffmpeg", pass1Args...)
-	// cmd.Stdout = os.Stdout
-	// cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("first pass (audio extraction) failed: %w", err)
+	cmd := exec.Command("ffmpeg", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("ffmpeg error: %s: %w", string(output), err)
 	}
 
-	// Second pass: Reattach cover art to the extracted audio segment
-	pass2Args := []string{
+	return nil
+}
+
+func (f *ffmpeg) addMetadataAndCover(inputPath, outputPath string, opts SplitParams) error {
+	args := []string{
 		"-y",
-		"-i", tempAudio,
+		"-i", inputPath,
 		"-i", opts.CoverArtPath,
-		"-map", "0:a", // Map audio from temp file
-		"-map", "1:v", // Map cover art from opts.CoverArtPath
-		"-c:a", "copy", // Copy audio stream from the temp file
-		"-c:v", "mjpeg", // Encode cover art as MJPEG
-		"-disposition:v:0", "attached_pic", // Mark cover art as attached picture
+		"-map", "0:a",
+		"-map", "1:v",
+		"-c:a", "copy",
+		"-c:v", "mjpeg",
+		"-disposition:v:0", "attached_pic",
 		"-movflags", "+faststart",
 		"-id3v2_version", "3",
-		"-metadata", fmt.Sprintf("album_artist=%s", opts.Artist),
-		"-metadata", fmt.Sprintf("artist=%s", opts.Track.Artist),
-		"-metadata", fmt.Sprintf("title=%s", opts.Track.Title),
-		"-metadata", fmt.Sprintf("track=%d/%d", opts.Track.TrackNumber, opts.TrackCount),
-		"-metadata", fmt.Sprintf("album=%s", opts.Name),
-		"-metadata:s:v", "title=Album cover",
-		"-metadata:s:v", "comment=Cover (front)",
-		"-metadata", "compilation=1",
-		fmt.Sprintf("%s.m4a", opts.OutputPath),
 	}
 
-	cmd = exec.Command("ffmpeg", pass2Args...)
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("second pass (cover art attachment) failed: %w", err)
+	// Add standard metadata
+	metadata := map[string]string{
+		"album_artist": opts.Artist,
+		"artist":       opts.Track.Artist,
+		"title":        opts.Track.Title,
+		"track":        fmt.Sprintf("%d/%d", opts.Track.TrackNumber, opts.TrackCount),
+		"album":        opts.Name,
+		"compilation":  "1",
+	}
+	for k, v := range metadata {
+		args = append(args, "-metadata", fmt.Sprintf("%s=%s", k, v))
 	}
 
-	// Remove the temporary file
-	os.Remove(tempAudio)
+	// Add video stream metadata
+	videoMetadata := map[string]string{
+		"title":   "Album cover",
+		"comment": "Cover (front)",
+	}
+	for k, v := range videoMetadata {
+		args = append(args, "-metadata:s:v", fmt.Sprintf("%s=%s", k, v))
+	}
+
+	args = append(args, outputPath)
+
+	cmd := exec.Command("ffmpeg", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("ffmpeg error: %s: %w", string(output), err)
+	}
 
 	return nil
 }
