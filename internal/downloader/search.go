@@ -51,7 +51,7 @@ func (s *soundCloudClient) Search(query string) (string, error) {
 	responseList := response.(map[string]any)["collection"].([]interface{})
 
 	if len(responseList) == 0 {
-		return "", fmt.Errorf("no]")
+		return "", fmt.Errorf("no results in search")
 	}
 
 	firstResult := responseList[0].(map[string]any)
