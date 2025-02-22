@@ -7,9 +7,9 @@ import (
 
 	"log/slog"
 
+	"github.com/jaki95/dj-set-downloader/config"
 	"github.com/jaki95/dj-set-downloader/internal/audio"
 	"github.com/jaki95/dj-set-downloader/internal/djset"
-	"github.com/jaki95/dj-set-downloader/internal/domain"
 	"github.com/jaki95/dj-set-downloader/internal/downloader"
 	"github.com/jaki95/dj-set-downloader/internal/tracklist"
 )
@@ -25,13 +25,12 @@ func main() {
 	}
 	flag.Parse()
 
-	// Validate required flags with explicit checks
 	if *tracklistURL == "" {
 		slog.Error("Missing required flag: -tracklist-url")
 		return
 	}
 
-	cfg, err := domain.LoadConfig("./config/config.yaml")
+	cfg, err := config.Load("./config/config.yaml")
 	if err != nil {
 		slog.Error(err.Error())
 		return

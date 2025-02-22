@@ -48,6 +48,8 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions) error {
 		return err
 	}
 
+	setLength := len(set.Tracks)
+
 	findQuery := fmt.Sprintf("%s %s", set.Name, set.Artist)
 
 	url, err := p.setDownloader.FindURL(findQuery)
@@ -76,7 +78,7 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions) error {
 	}
 
 	bar := progressbar.NewOptions(
-		len(set.Tracks),
+		setLength,
 		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
 		progressbar.OptionEnableColorCodes(true),
 		progressbar.OptionSetTheme(progressbar.ThemeASCII),
@@ -121,7 +123,7 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions) error {
 				InputPath:    fileName,
 				OutputPath:   outputFile,
 				Track:        *t,
-				TrackCount:   len(set.Tracks),
+				TrackCount:   setLength,
 				Artist:       set.Artist,
 				Name:         set.Name,
 				CoverArtPath: opts.CoverArtPath,

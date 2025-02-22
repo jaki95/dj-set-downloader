@@ -3,7 +3,7 @@ package downloader
 import (
 	"fmt"
 
-	"github.com/jaki95/dj-set-downloader/internal/domain"
+	"github.com/jaki95/dj-set-downloader/config"
 )
 
 type Downloader interface {
@@ -15,7 +15,7 @@ const (
 	SoundCloud = "soundcloud"
 )
 
-func NewDownloader(config *domain.Config) (Downloader, error) {
+func NewDownloader(config *config.Config) (Downloader, error) {
 	switch config.AudioSource {
 	case SoundCloud:
 		return NewSoundCloudDownloader()

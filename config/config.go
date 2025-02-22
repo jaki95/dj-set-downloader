@@ -1,4 +1,4 @@
-package domain
+package config
 
 import (
 	"os"
@@ -13,7 +13,7 @@ type Config struct {
 	TracklistSource string `yaml:"tracklist_source"`
 }
 
-func LoadConfig(path string) (*Config, error) {
+func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
