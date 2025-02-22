@@ -7,14 +7,18 @@ import (
 )
 
 type Importer interface {
-	Import(path string) (*pkg.Tracklist, error)
+	Import(source string) (*pkg.Tracklist, error)
 }
+
+const (
+	Source1001Tracklists = "1001tracklists"
+)
 
 func NewImporter(config *pkg.Config) (Importer, error) {
 	switch config.TracklistSource {
-	case "1001tracklists":
-		return NewTracklists1001Scraper(), nil
+	case Source1001Tracklists:
+		return New1001TracklistsImporter(), nil
 	default:
-		return nil, fmt.Errorf("unknown tracklist source")
+		return nil, fmt.Errorf("unknown tracklist source: %s", config.TracklistSource)
 	}
 }

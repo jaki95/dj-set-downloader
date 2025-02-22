@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"os"
 	"regexp"
@@ -16,17 +15,23 @@ import (
 	"github.com/jaki95/dj-set-downloader/pkg"
 )
 
-type tracklists1001Scraper struct{}
-
-func NewTracklists1001Scraper() *tracklists1001Scraper {
-	return &tracklists1001Scraper{}
+type tracklists1001Importer struct {
+	cacheDir string
 }
 
-func (t *tracklists1001Scraper) Import(url string) (*pkg.Tracklist, error) {
+func New1001TracklistsImporter() *tracklists1001Importer {
+	return &tracklists1001Importer{cacheDir: "./internal/tracklist/cache"}
+}
+
+func (t *tracklists1001Importer) Import(url string) (*pkg.Tracklist, error) {
 	var tracklist pkg.Tracklist
 
+	if err := os.MkdirAll(t.cacheDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create cache directory: %w", err)
+	}
+
 	// Attempt to load from cache
-	cachedFile, err := os.Open(fmt.Sprintf("./internal/tracklist/cache/%s.json", strings.ReplaceAll(url, "/", "")))
+	cachedFile, err := os.Open(fmt.Sprintf("%s/%s.json", t.cacheDir, strings.ReplaceAll(url, "/", "")))
 	if err == nil {
 		defer cachedFile.Close()
 		byteValue, err := io.ReadAll(cachedFile)
@@ -58,7 +63,7 @@ func (t *tracklists1001Scraper) Import(url string) (*pkg.Tracklist, error) {
 
 	// Handle errors
 	c.OnError(func(r *colly.Response, err error) {
-		log.Printf("Request URL: %v failed with response: %v\nError: %v", r.Request.URL, &r, err)
+		slog.Error("request failed", "url", r.Request.URL, "response", string(r.Body), "error", err)
 	})
 
 	// Counter for track numbering
@@ -113,14 +118,13 @@ func (t *tracklists1001Scraper) Import(url string) (*pkg.Tracklist, error) {
 		// Extract artist names by looking for <a> elements with href containing "/dj/"
 		var artists []string
 		e.DOM.Find("a").Each(func(i int, s *goquery.Selection) {
-			// Using goquery's equivalent for colly's DOM element
 			href, exists := s.Attr("href")
 			if exists && strings.HasPrefix(href, "/dj/") {
 				artists = append(artists, s.Text())
 			}
 		})
 
-		// Extract set name using regex - text after '@' or '-' including the date
+		// Extract set name using regex - text after '@' or '-' including the year
 		re := regexp.MustCompile(`[@-] (.+) \d{4}`)
 		matches := re.FindStringSubmatch(fullText)
 		setName := ""
@@ -140,13 +144,15 @@ func (t *tracklists1001Scraper) Import(url string) (*pkg.Tracklist, error) {
 	// Visit the URL and scrape data
 	err = c.Visit(url)
 	if err != nil {
-		// Retry logic
-		for range 10 {
+		maxRetries := 4
+		for retry := 0; retry < maxRetries; retry++ {
 			time.Sleep(2 * time.Second)
-			err = c.Visit(url)
+			if err = c.Visit(url); err == nil {
+				break
+			}
 		}
 		if err != nil {
-			return nil, fmt.Errorf("failed after retry: %w", err)
+			return nil, fmt.Errorf("failed after retrying: %w", err)
 		}
 	}
 
@@ -166,7 +172,7 @@ func (t *tracklists1001Scraper) Import(url string) (*pkg.Tracklist, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = os.WriteFile(fmt.Sprintf("./internal/tracklist/cache/%s.json", strings.ReplaceAll(url, "/", "")), jsonBytes, 0644)
+	err = os.WriteFile(fmt.Sprintf("%s/%s.json", t.cacheDir, strings.ReplaceAll(url, "/", "")), jsonBytes, 0644)
 	if err != nil {
 		return nil, err
 	}
