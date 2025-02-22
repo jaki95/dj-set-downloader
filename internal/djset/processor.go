@@ -33,37 +33,48 @@ func NewProcessor(
 type ProcessingOptions struct {
 	TracklistPath      string
 	DJSetURL           string
-	InputFile          string
-	SetArtist          string
-	SetName            string
 	CoverArtPath       string
 	MaxConcurrentTasks int
 }
 
 func (p *processor) ProcessTracks(opts *ProcessingOptions) error {
-	err := downloader.Download(opts.SetName, opts.DJSetURL)
+	set, err := p.tracklistImporter.Import(opts.TracklistPath)
 	if err != nil {
 		return err
 	}
 
-	tl, err := p.tracklistImporter.Import(opts.TracklistPath)
+	scClient, err := downloader.NewSoundCloudClient()
 	if err != nil {
 		return err
 	}
 
-	if err := p.audioProcessor.ExtractCoverArt(opts.InputFile, opts.CoverArtPath); err != nil {
+	url, err := scClient.Search(fmt.Sprintf("%s %s", set.Name, set.Artist))
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(url)
+
+	err = downloader.Download(set.Name, url)
+	if err != nil {
+		return err
+	}
+
+	fileName := fmt.Sprintf("%s.mp3", fmt.Sprintf("data/%s", set.Name))
+
+	if err := p.audioProcessor.ExtractCoverArt(fileName, opts.CoverArtPath); err != nil {
 		return err
 	}
 
 	defer os.Remove(opts.CoverArtPath)
 
-	err = os.MkdirAll(fmt.Sprintf("output/%s", opts.SetName), os.ModePerm)
+	err = os.MkdirAll(fmt.Sprintf("output/%s", set.Name), os.ModePerm)
 	if err != nil {
 		return err
 	}
 
 	bar := progressbar.NewOptions(
-		len(tl.Tracks),
+		len(set.Tracks),
 		progressbar.OptionFullWidth(),
 		progressbar.OptionShowCount(),
 		progressbar.OptionSetDescription("Processing tracks..."),
@@ -77,7 +88,7 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions) error {
 
 	errCh := make(chan error, 1)
 
-	for i, t := range tl.Tracks {
+	for i, t := range set.Tracks {
 		wg.Add(1)
 		go func(i int, t *pkg.Track) {
 			defer func() {
@@ -99,15 +110,15 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions) error {
 
 			defer func() { <-semaphore }()
 			safeTitle := sanitizeTitle(t.Title)
-			outputFile := fmt.Sprintf("output/%s/%02d - %s", opts.SetName, i+1, safeTitle)
+			outputFile := fmt.Sprintf("output/%s/%02d - %s", set.Name, i+1, safeTitle)
 
 			splitParams := audio.SplitParams{
-				InputPath:    opts.InputFile,
+				InputPath:    fileName,
 				OutputPath:   outputFile,
 				Track:        *t,
-				TrackCount:   len(tl.Tracks),
-				Artist:       opts.SetArtist,
-				Name:         opts.SetName,
+				TrackCount:   len(set.Tracks),
+				Artist:       set.Artist,
+				Name:         set.Name,
 				CoverArtPath: opts.CoverArtPath,
 			}
 
