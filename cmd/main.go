@@ -9,9 +9,9 @@ import (
 
 	"github.com/jaki95/dj-set-downloader/internal/audio"
 	"github.com/jaki95/dj-set-downloader/internal/djset"
+	"github.com/jaki95/dj-set-downloader/internal/domain"
 	"github.com/jaki95/dj-set-downloader/internal/downloader"
 	"github.com/jaki95/dj-set-downloader/internal/tracklist"
-	"github.com/jaki95/dj-set-downloader/pkg"
 )
 
 func main() {
@@ -31,7 +31,7 @@ func main() {
 		return
 	}
 
-	cfg, err := pkg.LoadConfig("./config/config.yaml")
+	cfg, err := domain.LoadConfig("./config/config.yaml")
 	if err != nil {
 		slog.Error(err.Error())
 		return

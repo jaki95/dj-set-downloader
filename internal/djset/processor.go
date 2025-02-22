@@ -12,9 +12,9 @@ import (
 	"github.com/schollz/progressbar/v3"
 
 	"github.com/jaki95/dj-set-downloader/internal/audio"
+	"github.com/jaki95/dj-set-downloader/internal/domain"
 	"github.com/jaki95/dj-set-downloader/internal/downloader"
 	"github.com/jaki95/dj-set-downloader/internal/tracklist"
-	"github.com/jaki95/dj-set-downloader/pkg"
 )
 
 type processor struct {
@@ -95,7 +95,7 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions) error {
 
 	for i, t := range set.Tracks {
 		wg.Add(1)
-		go func(i int, t *pkg.Track) {
+		go func(i int, t *domain.Track) {
 			defer func() {
 				bar.Add(1)
 				wg.Done()

@@ -12,7 +12,7 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly"
-	"github.com/jaki95/dj-set-downloader/pkg"
+	"github.com/jaki95/dj-set-downloader/internal/domain"
 )
 
 type tracklists1001Importer struct {
@@ -23,8 +23,8 @@ func New1001TracklistsImporter() *tracklists1001Importer {
 	return &tracklists1001Importer{cacheDir: "./internal/tracklist/cache"}
 }
 
-func (t *tracklists1001Importer) Import(url string) (*pkg.Tracklist, error) {
-	var tracklist pkg.Tracklist
+func (t *tracklists1001Importer) Import(url string) (*domain.Tracklist, error) {
+	var tracklist domain.Tracklist
 
 	if err := os.MkdirAll(t.cacheDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)
@@ -90,7 +90,7 @@ func (t *tracklists1001Importer) Import(url string) (*pkg.Tracklist, error) {
 		}
 
 		// Create the current track
-		track := &pkg.Track{
+		track := &domain.Track{
 			Artist:      artist,
 			Title:       title,
 			StartTime:   startTime,

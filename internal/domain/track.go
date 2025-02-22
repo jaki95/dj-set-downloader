@@ -1,4 +1,4 @@
-package pkg
+package domain
 
 type Track struct {
 	Artist      string `json:"artist"`

@@ -1,6 +1,6 @@
 package audio
 
-import "github.com/jaki95/dj-set-downloader/pkg"
+import "github.com/jaki95/dj-set-downloader/internal/domain"
 
 type Processor interface {
 	ExtractCoverArt(inputPath, coverPath string) error
@@ -10,7 +10,7 @@ type Processor interface {
 type SplitParams struct {
 	InputPath    string
 	OutputPath   string
-	Track        pkg.Track
+	Track        domain.Track
 	TrackCount   int
 	Artist       string
 	Name         string
