@@ -1,6 +1,7 @@
 package djset
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"log/slog"
@@ -54,7 +55,17 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions) error {
 
 	url, err := p.setDownloader.FindURL(findQuery)
 	if err != nil {
-		return err
+		fmt.Println("could not find match, input name of set:")
+		reader := bufio.NewReader(os.Stdin)
+		input, err := reader.ReadString('\n')
+		if err != nil {
+			return err
+		}
+		input = strings.TrimSpace(input)
+		url, err = p.setDownloader.FindURL(input)
+		if err != nil {
+			return err
+		}
 	}
 
 	slog.Debug("found match", "url", url)
