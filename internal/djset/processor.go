@@ -87,8 +87,28 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions) error {
 		progressbar.OptionSetDescription("[cyan][2/2][reset] Processing tracks..."),
 	)
 
+	return p.splitTracks(*set, *opts, bar, fileName, setLength)
+}
+
+func sanitizeTitle(title string) string {
+	replacer := strings.NewReplacer("/", "-", ":", "-", "\"", "'", "?", "", "\\", "-", "|", "-")
+	return replacer.Replace(title)
+}
+
+func (p *processor) splitTracks(
+	set domain.Tracklist,
+	opts ProcessingOptions,
+	bar *progressbar.ProgressBar,
+	fileName string,
+	setLength int,
+) error {
 	var wg sync.WaitGroup
-	semaphore := make(chan struct{}, opts.MaxConcurrentTasks)
+	maxWorkers := opts.MaxConcurrentTasks
+	if maxWorkers < 1 || maxWorkers > 10 {
+		slog.Warn("invalid max workers, defaulting to 1", "maxWorkers", opts.MaxConcurrentTasks)
+		maxWorkers = 1
+	}
+	semaphore := make(chan struct{}, maxWorkers)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -129,7 +149,7 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions) error {
 				CoverArtPath: opts.CoverArtPath,
 			}
 
-			if splitErr := p.audioProcessor.Split(splitParams); splitErr != nil {
+			if err := p.audioProcessor.Split(splitParams); err != nil {
 				select {
 				case errCh <- fmt.Errorf("track %d (%s): %w", i+1, t.Title, err):
 					cancel()
@@ -150,9 +170,4 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions) error {
 	}
 
 	return nil
-}
-
-func sanitizeTitle(title string) string {
-	replacer := strings.NewReplacer("/", "-", ":", "-", "\"", "'", "?", "", "\\", "-", "|", "-")
-	return replacer.Replace(title)
 }

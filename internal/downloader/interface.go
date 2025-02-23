@@ -6,6 +6,7 @@ import (
 	"github.com/jaki95/dj-set-downloader/config"
 )
 
+// Downloader handles the downloading of DJ sets.
 type Downloader interface {
 	FindURL(trackQuery string) (string, error)
 	Download(trackURL, name string) error

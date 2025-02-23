@@ -7,6 +7,7 @@ import (
 	"github.com/jaki95/dj-set-downloader/internal/domain"
 )
 
+// Importer imports a tracklist from a given source.
 type Importer interface {
 	Import(source string) (*domain.Tracklist, error)
 }
