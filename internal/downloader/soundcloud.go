@@ -34,6 +34,9 @@ func NewSoundCloudDownloader() (*soundCloudClient, error) {
 }
 
 func (s *soundCloudClient) FindURL(query string) (string, error) {
+	if query == "" {
+		return "", fmt.Errorf("invalid query")
+	}
 	slog.Debug("searching soundcloud for set", "query", query)
 	encodedQuery := url.QueryEscape(query)
 	res, err := http.Get(fmt.Sprintf("%s/search?q=%s&client_id=%s", s.baseURL, encodedQuery, s.clientID))
