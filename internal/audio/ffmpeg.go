@@ -34,7 +34,7 @@ func (f *ffmpeg) Split(opts SplitParams) error {
 	}
 
 	// Define temporary file path for the audio segment
-	tempAudio := fmt.Sprintf("%s_temp.m4a", opts.OutputPath)
+	tempAudio := fmt.Sprintf("%s_temp.%s", opts.OutputPath, opts.FileExtension)
 
 	defer os.Remove(tempAudio)
 
@@ -44,7 +44,7 @@ func (f *ffmpeg) Split(opts SplitParams) error {
 	}
 
 	// Second pass: Attach metadata and cover art
-	finalPath := fmt.Sprintf("%s.m4a", opts.OutputPath)
+	finalPath := fmt.Sprintf("%s.%s", opts.OutputPath, opts.FileExtension)
 
 	return f.addMetadataAndCover(tempAudio, finalPath, opts)
 }

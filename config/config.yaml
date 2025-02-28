@@ -2,3 +2,4 @@ log_level: 0
 audio_processor: ffmpeg
 audio_source: soundcloud
 tracklist_source: 1001tracklists
+file_extension: m4a

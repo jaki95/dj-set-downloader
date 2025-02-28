@@ -9,11 +9,12 @@ type Processor interface {
 }
 
 type SplitParams struct {
-	InputPath    string
-	OutputPath   string
-	Track        domain.Track
-	TrackCount   int
-	Artist       string
-	Name         string
-	CoverArtPath string
+	InputPath     string
+	OutputPath    string
+	FileExtension string
+	Track         domain.Track
+	TrackCount    int
+	Artist        string
+	Name          string
+	CoverArtPath  string
 }

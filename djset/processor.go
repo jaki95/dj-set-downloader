@@ -46,13 +46,14 @@ type ProcessingOptions struct {
 	TracklistPath      string
 	DJSetURL           string
 	CoverArtPath       string
+	FileExtension      string
 	MaxConcurrentTasks int
 }
 
-func (p *processor) ProcessTracks(opts *ProcessingOptions) error {
+func (p *processor) ProcessTracks(opts *ProcessingOptions) ([]string, error) {
 	set, err := p.tracklistImporter.Import(opts.TracklistPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	setLength := len(set.Tracks)
@@ -65,12 +66,12 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions) error {
 		reader := bufio.NewReader(os.Stdin)
 		input, err := reader.ReadString('\n')
 		if err != nil {
-			return err
+			return nil, err
 		}
 		input = strings.TrimSpace(input)
 		url, err = p.setDownloader.FindURL(input)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -78,20 +79,20 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions) error {
 
 	err = p.setDownloader.Download(url, set.Name)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	fileName := fmt.Sprintf("%s.mp3", fmt.Sprintf("data/%s", set.Name))
 
 	if err := p.audioProcessor.ExtractCoverArt(fileName, opts.CoverArtPath); err != nil {
-		return err
+		return nil, err
 	}
 
 	defer os.Remove(opts.CoverArtPath)
 
 	err = os.MkdirAll(fmt.Sprintf("output/%s", set.Name), os.ModePerm)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	bar := progressbar.NewOptions(
@@ -118,7 +119,7 @@ func (p *processor) splitTracks(
 	bar *progressbar.ProgressBar,
 	fileName string,
 	setLength int,
-) error {
+) ([]string, error) {
 	var wg sync.WaitGroup
 	maxWorkers := opts.MaxConcurrentTasks
 	if maxWorkers < 1 || maxWorkers > 10 {
@@ -131,6 +132,8 @@ func (p *processor) splitTracks(
 	defer cancel()
 
 	errCh := make(chan error, 1)
+	// Channel to collect file paths from goroutines
+	filePathCh := make(chan string, len(set.Tracks))
 
 	for i, t := range set.Tracks {
 		wg.Add(1)
@@ -157,13 +160,14 @@ func (p *processor) splitTracks(
 			outputFile := fmt.Sprintf("output/%s/%02d - %s", set.Name, i+1, safeTitle)
 
 			splitParams := audio.SplitParams{
-				InputPath:    fileName,
-				OutputPath:   outputFile,
-				Track:        *t,
-				TrackCount:   setLength,
-				Artist:       set.Artist,
-				Name:         set.Name,
-				CoverArtPath: opts.CoverArtPath,
+				InputPath:     fileName,
+				OutputPath:    outputFile,
+				FileExtension: opts.FileExtension,
+				Track:         *t,
+				TrackCount:    setLength,
+				Artist:        set.Artist,
+				Name:          set.Name,
+				CoverArtPath:  opts.CoverArtPath,
 			}
 
 			if err := p.audioProcessor.Split(splitParams); err != nil {
@@ -172,19 +176,31 @@ func (p *processor) splitTracks(
 					cancel()
 				default:
 				}
+				return
 			}
-		}(i, t)
 
+			// Send the output file path to the channel
+			filePathCh <- outputFile
+		}(i, t)
 	}
 
+	// Goroutine to close filePathCh after all workers are done
 	go func() {
 		wg.Wait()
+		close(filePathCh)
 		close(errCh)
 	}()
 
-	if err := <-errCh; err != nil {
-		return err
+	// Collect file paths from the channel
+	filePaths := make([]string, 0, len(set.Tracks))
+	for path := range filePathCh {
+		filePaths = append(filePaths, fmt.Sprintf("%s.%s", path, opts.FileExtension))
 	}
 
-	return nil
+	// Check for errors
+	if err := <-errCh; err != nil {
+		return nil, err
+	}
+
+	return filePaths, nil
 }

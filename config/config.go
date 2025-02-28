@@ -11,6 +11,7 @@ type Config struct {
 	AudioProcessor  string `yaml:"audio_processor"`
 	AudioSource     string `yaml:"audio_source"`
 	TracklistSource string `yaml:"tracklist_source"`
+	FileExtension   string `yaml:"file_extension"`
 }
 
 func Load(path string) (*Config, error) {

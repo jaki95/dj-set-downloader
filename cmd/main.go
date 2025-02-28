@@ -45,10 +45,11 @@ func main() {
 		TracklistPath:      *tracklistURL,
 		DJSetURL:           *soundcloudURL,
 		CoverArtPath:       "./data/cover_temp.jpg",
+		FileExtension:      cfg.FileExtension,
 		MaxConcurrentTasks: *maxWorkers,
 	}
 
-	if err := processor.ProcessTracks(opts); err != nil {
+	if _, err := processor.ProcessTracks(opts); err != nil {
 		slog.Error(err.Error())
 		return
 	}
