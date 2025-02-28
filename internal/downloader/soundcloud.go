@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 
+	"github.com/k0kubun/go-ansi"
 	"github.com/schollz/progressbar/v3"
 )
 
@@ -73,37 +74,38 @@ func (s *soundCloudClient) FindURL(query string) (string, error) {
 func (s *soundCloudClient) Download(trackURL, name string) error {
 	slog.Debug("downloading set")
 	cmd := exec.Command("scdl", "-l", trackURL, "--name-format", name, "--path", "data")
-	// stdout, err := cmd.StdoutPipe()
-	// if err != nil {
-	// 	return err
-	// }
-	cmd.Stderr = cmd.Stdout
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Env = append(os.Environ(), "PYTHONUNBUFFERED=1") // Force unbuffered output
 
-	return cmd.Run()
-	// bar := progressbar.NewOptions(
-	// 	100,
-	// 	progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
-	// 	progressbar.OptionEnableColorCodes(true),
-	// 	progressbar.OptionSetTheme(progressbar.ThemeASCII),
-	// 	progressbar.OptionFullWidth(),
-	// 	progressbar.OptionShowCount(),
-	// 	progressbar.OptionSetDescription("[cyan][1/2][reset] Downloading set..."),
-	// )
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("stderr pipe error: %w", err)
+	}
 
-	// if err := cmd.Start(); err != nil {
-	// 	return err
-	// }
+	bar := progressbar.NewOptions(
+		100,
+		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
+		progressbar.OptionEnableColorCodes(true),
+		progressbar.OptionSetTheme(progressbar.ThemeASCII),
+		progressbar.OptionFullWidth(),
+		progressbar.OptionShowCount(),
+		progressbar.OptionSetDescription("[cyan][1/2][reset] Downloading set..."),
+	)
 
-	// if err := readOutputAndRenderBar(stdout, bar); err != nil {
-	// 	return err
-	// }
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("command start error: %w", err)
+	}
 
-	// return cmd.Wait()
+	if err := readOutputAndRenderBar(stderr, bar); err != nil {
+		return err
+	}
+
+	if err := cmd.Wait(); err != nil {
+		return fmt.Errorf("command wait error: %w", err)
+	}
+
+	return nil
 }
 
-// readOutputAndRenderBar reads the cmd output byte-by-byte and renders a progress bar.
 func readOutputAndRenderBar(stdout io.ReadCloser, bar *progressbar.ProgressBar) error {
 	re := regexp.MustCompile(`(\d+)%`)
 	progressRe := regexp.MustCompile(`\d+%`)
