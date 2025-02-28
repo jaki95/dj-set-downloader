@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand"
+	"net/http" // Added for http.Cookie
 	"os"
 	"path/filepath"
 	"regexp"
@@ -55,7 +56,6 @@ func (t *tracklists1001Importer) Import(url string) (*domain.Tracklist, error) {
 		return cachedTracklist, nil
 	}
 
-	// Try Colly first
 	tracklistPtr, err := t.scrapeWithColly(url)
 	if err != nil {
 		slog.Warn("Colly failed, falling back to headless browser", "error", err)
@@ -84,7 +84,10 @@ func (t *tracklists1001Importer) scrapeWithColly(url string) (*domain.Tracklist,
 		colly.MaxDepth(1),
 	)
 
-	// Set request headers
+	if err := t.loadCookies(c); err != nil {
+		slog.Warn("Failed to load cookies", "error", err)
+	}
+
 	c.OnRequest(func(r *colly.Request) {
 		r.Headers.Set("User-Agent", t.userAgents[rand.Intn(len(t.userAgents))])
 		r.Headers.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
@@ -94,10 +97,15 @@ func (t *tracklists1001Importer) scrapeWithColly(url string) (*domain.Tracklist,
 		r.Headers.Set("Referer", "https://www.google.com/")
 	})
 
+	c.OnResponse(func(r *colly.Response) {
+		t.saveCookies(c) // Save cookies after successful response
+	})
+
 	c.OnError(func(r *colly.Response, err error) {
 		slog.Error("Request failed", "url", r.Request.URL, "status", r.StatusCode, "error", err)
 		if r.StatusCode == 403 || strings.Contains(string(r.Body), "captcha") {
-			slog.Info("Detected CAPTCHA or block. Please solve CAPTCHA manually and save cookies to", "file", t.cookieFile)
+			slog.Info("CAPTCHA or block detected. Please solve CAPTCHA manually in an incognito window, then save cookies to", "file", t.cookieFile)
+			slog.Info("Alternatively, wait for the headless browser fallback to open.")
 		}
 	})
 
@@ -154,26 +162,24 @@ func (t *tracklists1001Importer) scrapeWithColly(url string) (*domain.Tracklist,
 }
 
 func (t *tracklists1001Importer) scrapeWithHeadless(url string) (*domain.Tracklist, error) {
-	// Use a visible browser for manual CAPTCHA solving
 	ctx, cancel := chromedp.NewContext(context.Background(), chromedp.WithLogf(slog.Info))
 	defer cancel()
 
-	// Make browser visible (not headless) for interaction
+	// Visible browser for manual CAPTCHA solving
 	ctx, cancel = chromedp.NewExecAllocator(ctx, chromedp.NoDefaultBrowserCheck, chromedp.Flag("headless", false))
 	defer cancel()
 
 	var htmlContent string
-	slog.Info("Opening browser for manual CAPTCHA solving if needed. Close the browser when done.")
+	slog.Info("Opening browser for manual CAPTCHA solving if needed. Solve the CAPTCHA, then close the browser to continue.")
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(url),
-		chromedp.WaitVisible("div.tlpTog", chromedp.ByQuery), // Wait for tracklist or CAPTCHA
+		chromedp.WaitVisible("div.tlpTog", chromedp.ByQuery), // Wait for tracklist or CAPTCHA resolution
 		chromedp.OuterHTML("html", &htmlContent),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("headless browser failed: %w", err)
 	}
 
-	// Parse HTML with goquery
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(htmlContent))
 	if err != nil {
 		return nil, err
@@ -225,6 +231,45 @@ func (t *tracklists1001Importer) scrapeWithHeadless(url string) (*domain.Trackli
 	return &tracklist, nil
 }
 
+func (t *tracklists1001Importer) loadCookies(c *colly.Collector) error {
+	if _, err := os.Stat(t.cookieFile); os.IsNotExist(err) {
+		return nil
+	}
+
+	file, err := os.Open(t.cookieFile)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	var cookies []*http.Cookie // Use http.Cookie instead of colly.Cookie
+	if err := json.NewDecoder(file).Decode(&cookies); err != nil {
+		return err
+	}
+
+	c.SetCookies("https://www.1001tracklists.com", cookies) // Set all cookies at once
+
+	slog.Info("Loaded cookies from", "file", t.cookieFile)
+	return nil
+}
+
+func (t *tracklists1001Importer) saveCookies(c *colly.Collector) error {
+	cookies := c.Cookies("https://www.1001tracklists.com")
+	if len(cookies) == 0 {
+		return nil
+	}
+
+	jsonBytes, err := json.MarshalIndent(cookies, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(t.cookieFile, jsonBytes, 0644); err != nil {
+		return err
+	}
+	slog.Info("Saved cookies to", "file", t.cookieFile)
+	return nil
+}
+
 func (t *tracklists1001Importer) visitWithRetries(c *colly.Collector, url string) error {
 	var lastErr error
 	for attempt := 0; attempt <= t.maxRetries; attempt++ {
@@ -243,7 +288,7 @@ func (t *tracklists1001Importer) visitWithRetries(c *colly.Collector, url string
 	return lastErr
 }
 
-// Helper functions (unchanged)
+// Helper functions
 func (t *tracklists1001Importer) loadFromCache(filePath string) (*domain.Tracklist, error) {
 	info, err := os.Stat(filePath)
 	if os.IsNotExist(err) || time.Since(info.ModTime()) > t.cacheTTL {
