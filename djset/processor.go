@@ -12,6 +12,7 @@ import (
 	"github.com/k0kubun/go-ansi"
 	"github.com/schollz/progressbar/v3"
 
+	"github.com/jaki95/dj-set-downloader/config"
 	"github.com/jaki95/dj-set-downloader/internal/audio"
 	"github.com/jaki95/dj-set-downloader/internal/domain"
 	"github.com/jaki95/dj-set-downloader/internal/downloader"
@@ -24,16 +25,21 @@ type processor struct {
 	audioProcessor    audio.Processor
 }
 
-func NewProcessor(
-	tracklistImporter tracklist.Importer,
-	setDownloader downloader.Downloader,
-	audioProcessor audio.Processor,
-) *processor {
+func New(cfg *config.Config) (*processor, error) {
+	tracklistImporter, err := tracklist.NewImporter(cfg)
+	if err != nil {
+		return nil, err
+	}
+	setDownloader, err := downloader.NewDownloader(cfg)
+	if err != nil {
+		return nil, err
+	}
+	audioProcessor := audio.NewFFMPEGEngine()
 	return &processor{
 		tracklistImporter: tracklistImporter,
 		setDownloader:     setDownloader,
 		audioProcessor:    audioProcessor,
-	}
+	}, nil
 }
 
 type ProcessingOptions struct {

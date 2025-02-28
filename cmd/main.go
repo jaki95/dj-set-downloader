@@ -3,15 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 
-	"log/slog"
-
 	"github.com/jaki95/dj-set-downloader/config"
-	"github.com/jaki95/dj-set-downloader/internal/audio"
-	"github.com/jaki95/dj-set-downloader/internal/djset"
-	"github.com/jaki95/dj-set-downloader/internal/downloader"
-	"github.com/jaki95/dj-set-downloader/internal/tracklist"
+	"github.com/jaki95/dj-set-downloader/djset"
 )
 
 func main() {
@@ -39,29 +35,20 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.Level(cfg.LogLevel)}))
 	slog.SetDefault(logger)
 
-	tracklistImporter, err := tracklist.NewImporter(cfg)
+	processor, err := djset.New(cfg)
 	if err != nil {
 		slog.Error(err.Error())
 		return
 	}
 
-	setDownloader, err := downloader.NewDownloader(cfg)
-	if err != nil {
-		slog.Error(err.Error())
-		return
-	}
-
-	audioProcessor := audio.NewFFMPEGEngine()
-	setProcessor := djset.NewProcessor(tracklistImporter, setDownloader, audioProcessor)
-
-	processingOptions := &djset.ProcessingOptions{
+	opts := &djset.ProcessingOptions{
 		TracklistPath:      *tracklistURL,
 		DJSetURL:           *soundcloudURL,
 		CoverArtPath:       "./data/cover_temp.jpg",
 		MaxConcurrentTasks: *maxWorkers,
 	}
 
-	if err := setProcessor.ProcessTracks(processingOptions); err != nil {
+	if err := processor.ProcessTracks(opts); err != nil {
 		slog.Error(err.Error())
 		return
 	}
