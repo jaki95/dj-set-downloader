@@ -13,7 +13,6 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/k0kubun/go-ansi"
 	"github.com/schollz/progressbar/v3"
 )
 
@@ -72,32 +71,36 @@ func (s *soundCloudClient) FindURL(query string) (string, error) {
 }
 
 func (s *soundCloudClient) Download(trackURL, name string) error {
+	slog.Debug("downloading set")
 	cmd := exec.Command("scdl", "-l", trackURL, "--name-format", name, "--path", "data")
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return err
-	}
+	// stdout, err := cmd.StdoutPipe()
+	// if err != nil {
+	// 	return err
+	// }
 	cmd.Stderr = cmd.Stdout
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 
-	bar := progressbar.NewOptions(
-		100,
-		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
-		progressbar.OptionEnableColorCodes(true),
-		progressbar.OptionSetTheme(progressbar.ThemeASCII),
-		progressbar.OptionFullWidth(),
-		progressbar.OptionShowCount(),
-		progressbar.OptionSetDescription("[cyan][1/2][reset] Downloading set..."),
-	)
+	return cmd.Run()
+	// bar := progressbar.NewOptions(
+	// 	100,
+	// 	progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
+	// 	progressbar.OptionEnableColorCodes(true),
+	// 	progressbar.OptionSetTheme(progressbar.ThemeASCII),
+	// 	progressbar.OptionFullWidth(),
+	// 	progressbar.OptionShowCount(),
+	// 	progressbar.OptionSetDescription("[cyan][1/2][reset] Downloading set..."),
+	// )
 
-	if err := cmd.Start(); err != nil {
-		return err
-	}
+	// if err := cmd.Start(); err != nil {
+	// 	return err
+	// }
 
-	if err := readOutputAndRenderBar(stdout, bar); err != nil {
-		return err
-	}
+	// if err := readOutputAndRenderBar(stdout, bar); err != nil {
+	// 	return err
+	// }
 
-	return cmd.Wait()
+	// return cmd.Wait()
 }
 
 // readOutputAndRenderBar reads the cmd output byte-by-byte and renders a progress bar.

@@ -1,4 +1,4 @@
-log_level: 4
+log_level: -4
 audio_processor: ffmpeg
 audio_source: soundcloud
 tracklist_source: 1001tracklists
