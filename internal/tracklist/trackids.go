@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -168,8 +169,9 @@ func (t *TrackIDParser) setCommonHeaders(req *http.Request) {
 }
 
 func (t *TrackIDParser) parseTracklist(resp *TrackIDResponse) (*domain.Tracklist, error) {
+
 	tracklist := &domain.Tracklist{
-		Name: resp.Result.Title,
+		Name: SanitizeFilename(resp.Result.Title),
 	}
 	totalDuration := resp.Result.Duration
 	trackCounter := 1
@@ -309,4 +311,19 @@ func (t *TrackIDParser) calculateMidpoint(startTime, endTime string) string {
 	duration := end.Sub(start)
 	midpoint := start.Add(duration / 2)
 	return fmt.Sprintf("%02d:%02d:%02d", midpoint.Hour(), midpoint.Minute(), midpoint.Second())
+}
+
+// SanitizeFilename removes or replaces unsafe characters from filenames
+func SanitizeFilename(filename string) string {
+	// Define a regex to match unsafe characters (anything except letters, numbers, underscore, and dot)
+	re := regexp.MustCompile(`[^\w\.-]`)
+
+	// Replace unsafe characters with an underscore
+	safeName := re.ReplaceAllString(filename, "_")
+
+	// Trim multiple underscores and ensure a clean format
+	safeName = strings.Trim(safeName, "_")
+	safeName = strings.ReplaceAll(safeName, "__", "_") // Avoid double underscores
+
+	return safeName
 }

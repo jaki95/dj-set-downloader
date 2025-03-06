@@ -90,7 +90,7 @@ func (p *processor) ProcessTracks(
 		return nil, err
 	}
 
-	fileName := fmt.Sprintf("%s.mp3", fmt.Sprintf("data/%s", set.Name))
+	fileName := fmt.Sprintf("%s.%s", fmt.Sprintf("data/%s", set.Name), opts.FileExtension)
 
 	if err := p.audioProcessor.ExtractCoverArt(fileName, opts.CoverArtPath); err != nil {
 		return nil, err
@@ -101,6 +101,8 @@ func (p *processor) ProcessTracks(
 	if err != nil {
 		return nil, err
 	}
+
+	// return nil, nil
 
 	bar := progressbar.NewOptions(
 		setLength,
@@ -191,7 +193,6 @@ func (p *processor) splitTracks(
 			newCount := atomic.AddInt32(&completedTracks, 1)
 			trackProgress := int((float64(newCount) / float64(setLength)) * 100)
 			totalProgress := 50 + (trackProgress / 2) // Scale to 50-100%
-			slog.Info("Track processed", "count", newCount, "title", t.Title, "progress", totalProgress)
 			bar.Add(1)
 			progressCallback(totalProgress, fmt.Sprintf("Processed %d/%d tracks", newCount, setLength))
 			filePathCh <- outputFile
