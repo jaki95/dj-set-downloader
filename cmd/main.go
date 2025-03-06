@@ -49,7 +49,7 @@ func main() {
 		MaxConcurrentTasks: *maxWorkers,
 	}
 
-	if _, err := processor.ProcessTracks(opts); err != nil {
+	if _, err := processor.ProcessTracks(opts, nil); err != nil {
 		slog.Error(err.Error())
 		return
 	}

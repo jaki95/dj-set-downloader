@@ -50,7 +50,10 @@ type ProcessingOptions struct {
 	MaxConcurrentTasks int
 }
 
-func (p *processor) ProcessTracks(opts *ProcessingOptions) ([]string, error) {
+func (p *processor) ProcessTracks(
+	opts *ProcessingOptions,
+	progressCallback func(int, string),
+) ([]string, error) {
 	set, err := p.tracklistImporter.Import(opts.TracklistPath)
 	if err != nil {
 		return nil, err
@@ -59,10 +62,8 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions) ([]string, error) {
 	setLength := len(set.Tracks)
 
 	url := opts.DJSetURL
-
 	if url == "" {
 		findQuery := fmt.Sprintf("%s %s", set.Name, set.Artist)
-
 		url, err = p.setDownloader.FindURL(findQuery)
 		if err != nil {
 			fmt.Println("could not find match, input name of set:")
@@ -80,7 +81,10 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions) ([]string, error) {
 		slog.Debug("found match", "url", url)
 	}
 
-	err = p.setDownloader.Download(url, set.Name)
+	err = p.setDownloader.Download(url, set.Name, func(progress int, message string) {
+		totalProgress := progress / 2 // Scale to 0-50%
+		progressCallback(totalProgress, message)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +94,6 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions) ([]string, error) {
 	if err := p.audioProcessor.ExtractCoverArt(fileName, opts.CoverArtPath); err != nil {
 		return nil, err
 	}
-
 	defer os.Remove(opts.CoverArtPath)
 
 	err = os.MkdirAll(fmt.Sprintf("output/%s", set.Name), os.ModePerm)
@@ -108,7 +111,7 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions) ([]string, error) {
 		progressbar.OptionSetDescription("[cyan][2/2][reset] Processing tracks..."),
 	)
 
-	return p.splitTracks(*set, *opts, bar, fileName, setLength)
+	return p.splitTracks(*set, *opts, setLength, fileName, bar, progressCallback)
 }
 
 func sanitizeTitle(title string) string {
@@ -119,9 +122,10 @@ func sanitizeTitle(title string) string {
 func (p *processor) splitTracks(
 	set domain.Tracklist,
 	opts ProcessingOptions,
-	bar *progressbar.ProgressBar,
-	fileName string,
 	setLength int,
+	fileName string,
+	bar *progressbar.ProgressBar,
+	progressCallback func(int, string),
 ) ([]string, error) {
 	var wg sync.WaitGroup
 	maxWorkers := opts.MaxConcurrentTasks
@@ -135,16 +139,14 @@ func (p *processor) splitTracks(
 	defer cancel()
 
 	errCh := make(chan error, 1)
-	// Channel to collect file paths from goroutines
 	filePathCh := make(chan string, len(set.Tracks))
+
+	progressCallback(50, "Processing tracks...") // Start at 50% after download
 
 	for i, t := range set.Tracks {
 		wg.Add(1)
 		go func(i int, t *domain.Track) {
-			defer func() {
-				bar.Add(1)
-				wg.Done()
-			}()
+			defer wg.Done()
 
 			select {
 			case <-ctx.Done():
@@ -157,8 +159,8 @@ func (p *processor) splitTracks(
 			case <-ctx.Done():
 				return
 			}
-
 			defer func() { <-semaphore }()
+
 			safeTitle := sanitizeTitle(t.Title)
 			outputFile := fmt.Sprintf("output/%s/%02d - %s", set.Name, i+1, safeTitle)
 
@@ -182,28 +184,30 @@ func (p *processor) splitTracks(
 				return
 			}
 
-			// Send the output file path to the channel
+			// Update progress
+			trackProgress := int((float64(i+1) / float64(setLength)) * 100)
+			totalProgress := 50 + (trackProgress / 2) // Scale to 50-100%
+			bar.Add(1)                                // Update terminal bar
+			progressCallback(totalProgress, fmt.Sprintf("Processed track %d/%d", i+1, setLength))
 			filePathCh <- outputFile
 		}(i, t)
 	}
 
-	// Goroutine to close filePathCh after all workers are done
 	go func() {
 		wg.Wait()
 		close(filePathCh)
 		close(errCh)
 	}()
 
-	// Collect file paths from the channel
 	filePaths := make([]string, 0, len(set.Tracks))
 	for path := range filePathCh {
 		filePaths = append(filePaths, fmt.Sprintf("%s.%s", path, opts.FileExtension))
 	}
 
-	// Check for errors
 	if err := <-errCh; err != nil {
 		return nil, err
 	}
 
+	progressCallback(100, "Processing completed")
 	return filePaths, nil
 }

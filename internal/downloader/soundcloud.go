@@ -71,10 +71,10 @@ func (s *soundCloudClient) FindURL(query string) (string, error) {
 	return firstResult["permalink_url"].(string), nil
 }
 
-func (s *soundCloudClient) Download(trackURL, name string) error {
+func (s *soundCloudClient) Download(trackURL, name string, progressCallback func(int, string)) error {
 	slog.Debug("downloading set")
 	cmd := exec.Command("scdl", "-l", trackURL, "--name-format", name, "--path", "data")
-	cmd.Env = append(os.Environ(), "PYTHONUNBUFFERED=1") // Force unbuffered output
+	cmd.Env = append(os.Environ(), "PYTHONUNBUFFERED=1")
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
@@ -95,7 +95,7 @@ func (s *soundCloudClient) Download(trackURL, name string) error {
 		return fmt.Errorf("command start error: %w", err)
 	}
 
-	if err := readOutputAndRenderBar(stderr, bar); err != nil {
+	if err := readOutputAndReportProgress(stderr, bar, progressCallback); err != nil {
 		return err
 	}
 
@@ -106,22 +106,18 @@ func (s *soundCloudClient) Download(trackURL, name string) error {
 	return nil
 }
 
-func readOutputAndRenderBar(stdout io.ReadCloser, bar *progressbar.ProgressBar) error {
+func readOutputAndReportProgress(stderr io.ReadCloser, bar *progressbar.ProgressBar, progressCallback func(int, string)) error {
 	re := regexp.MustCompile(`(\d+)%`)
 	progressRe := regexp.MustCompile(`\d+%`)
 
-	var buf bytes.Buffer
+	var lineBuffer bytes.Buffer
+	var lastProgress int
+
+	progressCallback(0, "Downloading set...")
 
 	output := make([]byte, 1)
-	var lineBuffer bytes.Buffer
-	var lastProgress float64
-
 	for {
-		if lastProgress == 100 {
-			fmt.Println()
-			break
-		}
-		n, err := stdout.Read(output)
+		_, err := stderr.Read(output)
 		if err != nil {
 			if err == io.EOF {
 				break
@@ -129,31 +125,31 @@ func readOutputAndRenderBar(stdout io.ReadCloser, bar *progressbar.ProgressBar) 
 			return fmt.Errorf("read error: %w", err)
 		}
 
-		buf.Write(output[:n])
 		char := output[0]
-
 		if char == '\r' || char == '\n' {
-			// Process complete line
 			line := lineBuffer.String()
 			lineBuffer.Reset()
 
-			// Filter out progress lines
 			if !progressRe.MatchString(line) {
 				slog.Debug(line)
 			}
 
-			// Update progress bar
 			if matches := re.FindStringSubmatch(line); len(matches) > 1 {
-				progress, _ := strconv.ParseFloat(matches[1], 64)
-				delta := int(progress - lastProgress)
-				if delta > 0 {
-					bar.Add(delta)
+				progress, _ := strconv.Atoi(matches[1])
+				if progress > lastProgress {
+					bar.Set(progress) // Update terminal progress bar
+					progressCallback(progress, "Downloading set...")
 					lastProgress = progress
 				}
 			}
 		} else {
 			lineBuffer.WriteByte(char)
 		}
+	}
+
+	if lastProgress < 100 {
+		bar.Set(100)
+		progressCallback(100, "Download completed")
 	}
 
 	return nil

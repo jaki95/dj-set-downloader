@@ -1,7 +1,5 @@
 package djset
 
-import "github.com/jaki95/dj-set-downloader/internal/domain"
-
 type DJSet interface {
-	ProcessTracks([]*domain.Track) ([]string, error)
+	ProcessTracks(opts *ProcessingOptions, progressCallback func(int, string)) ([]string, error)
 }

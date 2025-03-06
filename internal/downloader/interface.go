@@ -9,7 +9,7 @@ import (
 // Downloader handles the downloading of DJ sets.
 type Downloader interface {
 	FindURL(trackQuery string) (string, error)
-	Download(trackURL, name string) error
+	Download(trackURL, name string, progressCallback func(int, string)) error
 }
 
 const (
