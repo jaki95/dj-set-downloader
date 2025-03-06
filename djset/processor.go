@@ -102,8 +102,6 @@ func (p *processor) ProcessTracks(
 		return nil, err
 	}
 
-	// return nil, nil
-
 	bar := progressbar.NewOptions(
 		setLength,
 		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
