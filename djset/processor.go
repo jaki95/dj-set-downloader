@@ -58,24 +58,27 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions) ([]string, error) {
 
 	setLength := len(set.Tracks)
 
-	findQuery := fmt.Sprintf("%s %s", set.Name, set.Artist)
+	url := opts.DJSetURL
 
-	url, err := p.setDownloader.FindURL(findQuery)
-	if err != nil {
-		fmt.Println("could not find match, input name of set:")
-		reader := bufio.NewReader(os.Stdin)
-		input, err := reader.ReadString('\n')
+	if url == "" {
+		findQuery := fmt.Sprintf("%s %s", set.Name, set.Artist)
+
+		url, err = p.setDownloader.FindURL(findQuery)
 		if err != nil {
-			return nil, err
+			fmt.Println("could not find match, input name of set:")
+			reader := bufio.NewReader(os.Stdin)
+			input, err := reader.ReadString('\n')
+			if err != nil {
+				return nil, err
+			}
+			input = strings.TrimSpace(input)
+			url, err = p.setDownloader.FindURL(input)
+			if err != nil {
+				return nil, err
+			}
 		}
-		input = strings.TrimSpace(input)
-		url, err = p.setDownloader.FindURL(input)
-		if err != nil {
-			return nil, err
-		}
+		slog.Debug("found match", "url", url)
 	}
-
-	slog.Debug("found match", "url", url)
 
 	err = p.setDownloader.Download(url, set.Name)
 	if err != nil {
