@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/k0kubun/go-ansi"
 	"github.com/schollz/progressbar/v3"
@@ -128,6 +129,7 @@ func (p *processor) splitTracks(
 	progressCallback func(int, string),
 ) ([]string, error) {
 	var wg sync.WaitGroup
+	var completedTracks int32 // Atomic counter for completed tracks
 	maxWorkers := opts.MaxConcurrentTasks
 	if maxWorkers < 1 || maxWorkers > 10 {
 		slog.Warn("invalid max workers, defaulting to 1", "maxWorkers", opts.MaxConcurrentTasks)
@@ -141,7 +143,8 @@ func (p *processor) splitTracks(
 	errCh := make(chan error, 1)
 	filePathCh := make(chan string, len(set.Tracks))
 
-	progressCallback(50, "Processing tracks...") // Start at 50% after download
+	slog.Info("Starting track splitting", "trackCount", setLength)
+	progressCallback(50, "Processing tracks...")
 
 	for i, t := range set.Tracks {
 		wg.Add(1)
@@ -184,11 +187,13 @@ func (p *processor) splitTracks(
 				return
 			}
 
-			// Update progress
-			trackProgress := int((float64(i+1) / float64(setLength)) * 100)
+			// Increment completed tracks atomically
+			newCount := atomic.AddInt32(&completedTracks, 1)
+			trackProgress := int((float64(newCount) / float64(setLength)) * 100)
 			totalProgress := 50 + (trackProgress / 2) // Scale to 50-100%
-			bar.Add(1)                                // Update terminal bar
-			progressCallback(totalProgress, fmt.Sprintf("Processed track %d/%d", i+1, setLength))
+			slog.Info("Track processed", "count", newCount, "title", t.Title, "progress", totalProgress)
+			bar.Add(1)
+			progressCallback(totalProgress, fmt.Sprintf("Processed %d/%d tracks", newCount, setLength))
 			filePathCh <- outputFile
 		}(i, t)
 	}
@@ -208,6 +213,7 @@ func (p *processor) splitTracks(
 		return nil, err
 	}
 
+	slog.Info("Splitting completed")
 	progressCallback(100, "Processing completed")
 	return filePaths, nil
 }
