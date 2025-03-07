@@ -1,8 +1,61 @@
 # DJ Set Downloader
 
-A utility designed for music enthusiasts who want to organize and enjoy their favorite mixes in a structured way.
+This application downloads DJ sets from SoundCloud and splits them into individual tracks based on a tracklist.
 
-Download DJ sets and automatically split them into individual tracks based on a provided tracklist. 
+## Testing
+
+To run all tests:
+
+```bash
+go test ./...
+```
+
+To generate test coverage:
+
+```bash
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out
+```
+
+### Test Categories
+
+- **Unit Tests**: Test individual functions and components in isolation
+- **Integration Tests**: Test components that interact with external systems (these are skipped by default)
+
+## Continuous Integration
+
+This project uses GitHub Actions for continuous integration. The following checks run automatically on each push to the main branch:
+
+1. **Linting**: Using golangci-lint to ensure code quality
+2. **Testing**: Running all unit tests and generating coverage reports
+3. **Building**: Ensuring the application builds successfully
+
+### CI Workflow Files
+
+- `.github/workflows/ci.yml`: Main CI workflow for linting, testing, and building
+- `.github/workflows/go-test.yml`: Specialized workflow for running tests with coverage reports
+- `.github/workflows/soundcloud-test.yml`: Specialized workflow for SoundCloud downloader tests
+
+### Required Secrets
+
+To run the SoundCloud tests in CI, you need to set up the following secrets in your GitHub repository:
+
+- `SOUNDCLOUD_CLIENT_ID`: Your SoundCloud client ID
+
+## Development Setup
+
+To set up for local development:
+
+1. Install Go (version 1.23.4 or later recommended)
+2. Install FFMPEG for audio processing
+3. Install Python and the `scdl` package for SoundCloud downloading
+4. Clone the repository
+5. Run `go mod download` to fetch dependencies
+6. Run tests to verify your setup
+
+## Configuration
+
+The application is configured via the `config/config.yaml` file. See the example config file for available options.
 
 ## Dependencies
 
