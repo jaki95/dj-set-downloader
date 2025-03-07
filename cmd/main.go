@@ -44,7 +44,6 @@ func main() {
 	opts := &djset.ProcessingOptions{
 		TracklistPath:      *tracklistURL,
 		DJSetURL:           *soundcloudURL,
-		CoverArtPath:       "./data/cover_temp.jpg",
 		FileExtension:      cfg.FileExtension,
 		MaxConcurrentTasks: *maxWorkers,
 	}

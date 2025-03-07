@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -17,6 +18,7 @@ import (
 	"github.com/jaki95/dj-set-downloader/internal/audio"
 	"github.com/jaki95/dj-set-downloader/internal/domain"
 	"github.com/jaki95/dj-set-downloader/internal/downloader"
+	"github.com/jaki95/dj-set-downloader/internal/storage"
 	"github.com/jaki95/dj-set-downloader/internal/tracklist"
 )
 
@@ -24,6 +26,7 @@ type processor struct {
 	tracklistImporter tracklist.Importer
 	setDownloader     downloader.Downloader
 	audioProcessor    audio.Processor
+	storage           storage.Storage
 }
 
 func New(cfg *config.Config) (*processor, error) {
@@ -36,17 +39,24 @@ func New(cfg *config.Config) (*processor, error) {
 		return nil, err
 	}
 	audioProcessor := audio.NewFFMPEGEngine()
+
+	// Initialize storage
+	fileStorage, err := storage.NewLocalFileStorage("data", "output", "data")
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize storage: %w", err)
+	}
+
 	return &processor{
 		tracklistImporter: tracklistImporter,
 		setDownloader:     setDownloader,
 		audioProcessor:    audioProcessor,
+		storage:           fileStorage,
 	}, nil
 }
 
 type ProcessingOptions struct {
 	TracklistPath      string
 	DJSetURL           string
-	CoverArtPath       string
 	FileExtension      string
 	MaxConcurrentTasks int
 }
@@ -90,21 +100,25 @@ func (p *processor) ProcessTracks(
 		return nil, err
 	}
 
-	files, err := os.ReadDir("data")
+	// Find files in the data directory that match the set name
+	// This will be encapsulated in storage later
+	files, err := p.storage.ListFiles("", set.Name)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error listing files: %w", err)
 	}
 
 	var downloadedFile string
 	var actualExtension string
 
-	for _, file := range files {
-		if !file.IsDir() && strings.HasPrefix(file.Name(), set.Name) {
-			downloadedFile = file.Name()
+	for _, filePath := range files {
+		fileName := filepath.Base(filePath)
+		if strings.HasPrefix(fileName, set.Name) {
+			downloadedFile = fileName
 			parts := strings.Split(downloadedFile, ".")
 			if len(parts) > 1 {
 				actualExtension = parts[len(parts)-1]
 			} else {
+				// If no extension found, fall back to config
 				actualExtension = opts.FileExtension
 			}
 			break
@@ -119,21 +133,24 @@ func (p *processor) ProcessTracks(
 		slog.Debug("found downloaded file", "file", downloadedFile, "extension", actualExtension)
 	}
 
+	// Make sure we have a non-empty extension
 	if actualExtension == "" {
 		slog.Warn("empty file extension detected, falling back to configured extension", "extension", opts.FileExtension)
 		actualExtension = opts.FileExtension
 	}
 
-	fileName := fmt.Sprintf("data/%s", downloadedFile)
+	// Get the file path from storage
+	fileName := p.storage.GetSetPath(set.Name, actualExtension)
+	coverArtPath := p.storage.GetCoverArtPath()
 
-	if err := p.audioProcessor.ExtractCoverArt(fileName, opts.CoverArtPath); err != nil {
+	if err := p.audioProcessor.ExtractCoverArt(fileName, coverArtPath); err != nil {
 		return nil, err
 	}
-	defer os.Remove(opts.CoverArtPath)
+	defer p.storage.Cleanup() // This will clean up the cover art
 
-	err = os.MkdirAll(fmt.Sprintf("output/%s", set.Name), os.ModePerm)
-	if err != nil {
-		return nil, err
+	// Create output directory for the set
+	if err := p.storage.CreateSetOutputDir(set.Name); err != nil {
+		return nil, fmt.Errorf("failed to create output directory: %w", err)
 	}
 
 	bar := progressbar.NewOptions(
@@ -150,7 +167,7 @@ func (p *processor) ProcessTracks(
 	updatedOpts := opts
 	updatedOpts.FileExtension = actualExtension
 
-	return p.splitTracks(*set, *updatedOpts, setLength, fileName, bar, progressCallback)
+	return p.splitTracks(*set, *updatedOpts, setLength, fileName, coverArtPath, bar, progressCallback)
 }
 
 func sanitizeTitle(title string) string {
@@ -163,6 +180,7 @@ func (p *processor) splitTracks(
 	opts ProcessingOptions,
 	setLength int,
 	fileName string,
+	coverArtPath string,
 	bar *progressbar.ProgressBar,
 	progressCallback func(int, string),
 ) ([]string, error) {
@@ -203,17 +221,31 @@ func (p *processor) splitTracks(
 			defer func() { <-semaphore }()
 
 			safeTitle := sanitizeTitle(t.Title)
-			outputFile := fmt.Sprintf("output/%s/%02d - %s", set.Name, i+1, safeTitle)
+			trackName := fmt.Sprintf("%02d - %s", i+1, safeTitle)
+
+			// Get the output path from the storage layer
+			outputPath, err := p.storage.SaveTrack(set.Name, trackName, opts.FileExtension)
+			if err != nil {
+				select {
+				case errCh <- fmt.Errorf("failed to create output path for track %d (%s): %w", i+1, t.Title, err):
+					cancel()
+				default:
+				}
+				return
+			}
+
+			// Remove the extension as the audio processor will add it
+			outputPath = strings.TrimSuffix(outputPath, "."+opts.FileExtension)
 
 			splitParams := audio.SplitParams{
 				InputPath:     fileName,
-				OutputPath:    outputFile,
+				OutputPath:    outputPath,
 				FileExtension: opts.FileExtension,
 				Track:         *t,
 				TrackCount:    setLength,
 				Artist:        set.Artist,
 				Name:          set.Name,
-				CoverArtPath:  opts.CoverArtPath,
+				CoverArtPath:  coverArtPath,
 			}
 
 			if err := p.audioProcessor.Split(splitParams); err != nil {
@@ -231,7 +263,10 @@ func (p *processor) splitTracks(
 			totalProgress := 50 + (trackProgress / 2) // Scale to 50-100%
 			_ = bar.Add(1)
 			progressCallback(totalProgress, fmt.Sprintf("Processed %d/%d tracks", newCount, setLength))
-			filePathCh <- fmt.Sprintf("%s.%s", outputFile, opts.FileExtension)
+
+			// Add the full path to the result channel
+			finalPath := fmt.Sprintf("%s.%s", outputPath, opts.FileExtension)
+			filePathCh <- finalPath
 		}(i, t)
 	}
 

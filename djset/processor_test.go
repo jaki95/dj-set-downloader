@@ -1,6 +1,7 @@
 package djset
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -60,20 +61,77 @@ func (m *MockAudioProcessor) Split(params audio.SplitParams) error {
 	return args.Error(0)
 }
 
+// MockStorage implements the storage.Storage interface for testing
+type MockStorage struct {
+	mock.Mock
+}
+
+func (m *MockStorage) SaveDownloadedSet(setName string, originalExt string) (string, error) {
+	args := m.Called(setName, originalExt)
+	return args.String(0), args.Error(1)
+}
+
+func (m *MockStorage) SaveTrack(setName, trackName string, ext string) (string, error) {
+	args := m.Called(setName, trackName, ext)
+	return args.String(0), args.Error(1)
+}
+
+func (m *MockStorage) GetSetPath(setName string, ext string) string {
+	args := m.Called(setName, ext)
+	return args.String(0)
+}
+
+func (m *MockStorage) GetCoverArtPath() string {
+	args := m.Called()
+	return args.String(0)
+}
+
+func (m *MockStorage) CreateSetOutputDir(setName string) error {
+	args := m.Called(setName)
+	return args.Error(0)
+}
+
+func (m *MockStorage) Cleanup() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+func (m *MockStorage) GetReader(path string) (io.ReadCloser, error) {
+	args := m.Called(path)
+	return args.Get(0).(io.ReadCloser), args.Error(1)
+}
+
+func (m *MockStorage) GetWriter(path string) (io.WriteCloser, error) {
+	args := m.Called(path)
+	return args.Get(0).(io.WriteCloser), args.Error(1)
+}
+
+func (m *MockStorage) FileExists(path string) bool {
+	args := m.Called(path)
+	return args.Bool(0)
+}
+
+func (m *MockStorage) ListFiles(dir string, pattern string) ([]string, error) {
+	args := m.Called(dir, pattern)
+	return args.Get(0).([]string), args.Error(1)
+}
+
 // These functions are unused in current tests but kept for future use
 // nolint:unused
-func setupTestProcessor() (*processor, *MockTracklistImporter, *MockDownloader, *MockAudioProcessor) {
+func setupTestProcessor() (*processor, *MockTracklistImporter, *MockDownloader, *MockAudioProcessor, *MockStorage) {
 	mockImporter := new(MockTracklistImporter)
 	mockDownloader := new(MockDownloader)
 	mockAudioProcessor := new(MockAudioProcessor)
+	mockStorage := new(MockStorage)
 
 	p := &processor{
 		tracklistImporter: mockImporter,
 		setDownloader:     mockDownloader,
 		audioProcessor:    mockAudioProcessor,
+		storage:           mockStorage,
 	}
 
-	return p, mockImporter, mockDownloader, mockAudioProcessor
+	return p, mockImporter, mockDownloader, mockAudioProcessor, mockStorage
 }
 
 // nolint:unused
@@ -110,6 +168,7 @@ func TestNew(t *testing.T) {
 	assert.NotNil(t, p.tracklistImporter)
 	assert.NotNil(t, p.setDownloader)
 	assert.NotNil(t, p.audioProcessor)
+	assert.NotNil(t, p.storage)
 }
 
 func TestSanitizeTitle(t *testing.T) {
