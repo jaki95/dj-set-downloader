@@ -30,24 +30,35 @@ type processor struct {
 }
 
 func New(cfg *config.Config) (*processor, error) {
-	tracklistImporter, err := tracklist.NewImporter(cfg)
+	// Create the track importer
+	trackImporter, err := tracklist.NewImporter(cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create tracklist importer: %w", err)
 	}
+
+	// Create the downloader
 	setDownloader, err := downloader.NewDownloader(cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create downloader: %w", err)
 	}
-	audioProcessor := audio.NewFFMPEGEngine()
 
-	// Initialize storage
-	fileStorage, err := storage.NewLocalFileStorage("data", "output", "data")
+	// Create the audio processor
+	var audioProcessor audio.Processor
+	switch cfg.AudioProcessor {
+	case "ffmpeg":
+		audioProcessor = audio.NewFFMPEGEngine()
+	default:
+		return nil, fmt.Errorf("unsupported audio processor: %s", cfg.AudioProcessor)
+	}
+
+	// Create the storage
+	fileStorage, err := storage.NewStorage(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize storage: %w", err)
+		return nil, fmt.Errorf("failed to create storage: %w", err)
 	}
 
 	return &processor{
-		tracklistImporter: tracklistImporter,
+		tracklistImporter: trackImporter,
 		setDownloader:     setDownloader,
 		audioProcessor:    audioProcessor,
 		storage:           fileStorage,
@@ -146,7 +157,7 @@ func (p *processor) ProcessTracks(
 	if err := p.audioProcessor.ExtractCoverArt(fileName, coverArtPath); err != nil {
 		return nil, err
 	}
-	defer p.storage.Cleanup() // This will clean up the cover art
+	defer p.storage.Cleanup()
 
 	// Create output directory for the set
 	if err := p.storage.CreateSetOutputDir(set.Name); err != nil {

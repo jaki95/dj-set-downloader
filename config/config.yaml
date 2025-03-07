@@ -3,3 +3,19 @@ audio_processor: ffmpeg
 audio_source: soundcloud
 tracklist_source: trackids
 file_extension: m4a
+
+# Storage configuration
+storage:
+  # Storage type: "local" or "gcs"
+  type: local
+  
+  # Local storage options
+  data_dir: data
+  output_dir: output
+  temp_dir: temp
+  
+  # GCS storage options (only used when type is "gcs")
+  # bucket_name: your-bucket-name
+  # object_prefix: dj-sets
+  # credentials_file: path/to/credentials.json
+  # public_base_url: https://storage.googleapis.com/your-bucket-name
