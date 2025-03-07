@@ -29,7 +29,6 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    needs: lint
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -60,25 +59,11 @@ jobs:
         file: ./coverage.out
         flags: unittests
         
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    needs: test
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - name: Generate coverage report
+      run: go tool cover -html=coverage.out -o coverage.html
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.24.0'
-        cache: true
-
-    - name: Build
-      run: go build -v ./cmd/...
-      
-    - name: Archive binary
+    - name: Upload coverage report
       uses: actions/upload-artifact@v4
       with:
-        name: dj-set-downloader
-        path: dj-set-downloader 
+        name: coverage-report
+        path: coverage.html

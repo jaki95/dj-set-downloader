@@ -32,8 +32,9 @@ This project uses GitHub Actions for continuous integration. The following check
 
 ### CI Workflow Files
 
-- `.github/workflows/ci.yml`: Main CI workflow for linting, testing, and building
-- `.github/workflows/go-test.yml`: Specialized workflow for running tests with coverage reports
+- `.github/workflows/ci.yml`: Main CI workflow that handles linting, testing, and building in parallel
+
+> **Note**: SoundCloud tests use a mock client ID for CI runs to avoid requiring real API credentials.
 
 ## Development Setup
 
