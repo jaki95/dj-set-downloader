@@ -137,7 +137,7 @@ func readOutputAndReportProgress(stderr io.ReadCloser, bar *progressbar.Progress
 			if matches := re.FindStringSubmatch(line); len(matches) > 1 {
 				progress, _ := strconv.Atoi(matches[1])
 				if progress > lastProgress {
-					bar.Set(progress) // Update terminal progress bar
+					_ = bar.Set(progress) // Update terminal progress bar
 					progressCallback(progress, "Downloading set...")
 					lastProgress = progress
 				}
@@ -148,7 +148,7 @@ func readOutputAndReportProgress(stderr io.ReadCloser, bar *progressbar.Progress
 	}
 
 	if lastProgress < 100 {
-		bar.Set(100)
+		_ = bar.Set(100)
 		progressCallback(100, "Download completed")
 	}
 

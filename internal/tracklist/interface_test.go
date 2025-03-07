@@ -73,8 +73,3 @@ func getTypeName(v interface{}) string {
 	}
 	return fmt.Sprintf("%T", v)
 }
-
-// This function returns the type of the value
-func typeOf(v interface{}) interface{} {
-	return v
-}

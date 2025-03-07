@@ -229,7 +229,7 @@ func (p *processor) splitTracks(
 			newCount := atomic.AddInt32(&completedTracks, 1)
 			trackProgress := int((float64(newCount) / float64(setLength)) * 100)
 			totalProgress := 50 + (trackProgress / 2) // Scale to 50-100%
-			bar.Add(1)
+			_ = bar.Add(1)
 			progressCallback(totalProgress, fmt.Sprintf("Processed %d/%d tracks", newCount, setLength))
 			filePathCh <- fmt.Sprintf("%s.%s", outputFile, opts.FileExtension)
 		}(i, t)

@@ -60,7 +60,8 @@ func (m *MockAudioProcessor) Split(params audio.SplitParams) error {
 	return args.Error(0)
 }
 
-// Test setup helper
+// These functions are unused in current tests but kept for future use
+// nolint:unused
 func setupTestProcessor() (*processor, *MockTracklistImporter, *MockDownloader, *MockAudioProcessor) {
 	mockImporter := new(MockTracklistImporter)
 	mockDownloader := new(MockDownloader)
@@ -75,7 +76,7 @@ func setupTestProcessor() (*processor, *MockTracklistImporter, *MockDownloader, 
 	return p, mockImporter, mockDownloader, mockAudioProcessor
 }
 
-// Test file helper
+// nolint:unused
 func createTestFile(t *testing.T, path, content string) {
 	t.Helper()
 	dir := filepath.Dir(path)
