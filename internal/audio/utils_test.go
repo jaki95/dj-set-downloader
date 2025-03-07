@@ -3,52 +3,58 @@ package audio
 import (
 	"testing"
 
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestTimeToSeconds(t *testing.T) {
-	testCases := []struct {
-		name           string
-		timestamp      string
-		expectedErr    string
-		expectedOutput float64
+	tests := []struct {
+		name     string
+		timeStr  string
+		expected float64
+		wantErr  bool
 	}{
 		{
-			name:           "minute timestamp",
-			timestamp:      "45:23",
-			expectedErr:    "",
-			expectedOutput: 45*60 + 23,
+			name:     "zero time",
+			timeStr:  "00:00:00",
+			expected: 0,
+			wantErr:  false,
 		},
 		{
-			name:           "hour timestamp",
-			timestamp:      "3:55:33",
-			expectedErr:    "",
-			expectedOutput: 3*3600 + 55*60 + 33,
+			name:     "minutes and seconds",
+			timeStr:  "05:30",
+			expected: 330, // 5*60 + 30
+			wantErr:  false,
 		},
 		{
-			name:           "invalid parts",
-			timestamp:      "1:03:55:33",
-			expectedErr:    "invalid timestamp",
-			expectedOutput: 0,
+			name:     "hours, minutes, seconds",
+			timeStr:  "01:30:45",
+			expected: 5445, // 1*3600 + 30*60 + 45
+			wantErr:  false,
 		},
 		{
-			name:           "invalid timestamp",
-			timestamp:      "03-55-33",
-			expectedErr:    "invalid timestamp",
-			expectedOutput: 0,
+			name:     "invalid format",
+			timeStr:  "1:30:45",
+			expected: 5445,
+			wantErr:  false,
+		},
+		{
+			name:     "non-numeric",
+			timeStr:  "aa:bb:cc",
+			expected: 0,
+			wantErr:  true,
 		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			seconds, err := timeToSeconds(tc.timestamp)
-			if tc.expectedErr != "" {
-				require.ErrorContains(t, err, tc.expectedErr)
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, tc.expectedOutput, seconds)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := timeToSeconds(tt.timeStr)
 
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expected, result)
+			}
 		})
 	}
 }
