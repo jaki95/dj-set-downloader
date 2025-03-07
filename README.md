@@ -46,7 +46,7 @@ To run the SoundCloud tests in CI, you need to set up the following secrets in y
 
 To set up for local development:
 
-1. Install Go (version 1.23.4 or later recommended)
+1. Install Go (version 1.24.0 or later recommended)
 2. Install FFMPEG for audio processing
 3. Install Python and the `scdl` package for SoundCloud downloading
 4. Clone the repository

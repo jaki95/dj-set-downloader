@@ -12,12 +12,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Set up Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
-        go-version: '1.23.4'
+        go-version: '1.24.0'
         cache: true
 
     - name: Install golangci-lint
@@ -32,12 +32,12 @@ jobs:
     needs: lint
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Set up Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
-        go-version: '1.23.4'
+        go-version: '1.24.0'
         cache: true
 
     - name: Install dependencies
@@ -53,7 +53,7 @@ jobs:
       run: go test -v -race -coverprofile=coverage.out ./...
       
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v5.3.1
       with:
         file: ./coverage.out
         flags: unittests
@@ -64,19 +64,19 @@ jobs:
     needs: test
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Set up Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
-        go-version: '1.23.4'
+        go-version: '1.24.0'
         cache: true
 
     - name: Build
       run: go build -v ./cmd/...
       
     - name: Archive binary
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: dj-set-downloader
         path: dj-set-downloader 
