@@ -90,7 +90,41 @@ func (p *processor) ProcessTracks(
 		return nil, err
 	}
 
-	fileName := fmt.Sprintf("%s.%s", fmt.Sprintf("data/%s", set.Name), opts.FileExtension)
+	files, err := os.ReadDir("data")
+	if err != nil {
+		return nil, err
+	}
+
+	var downloadedFile string
+	var actualExtension string
+
+	for _, file := range files {
+		if !file.IsDir() && strings.HasPrefix(file.Name(), set.Name) {
+			downloadedFile = file.Name()
+			parts := strings.Split(downloadedFile, ".")
+			if len(parts) > 1 {
+				actualExtension = parts[len(parts)-1]
+			} else {
+				actualExtension = opts.FileExtension
+			}
+			break
+		}
+	}
+
+	if downloadedFile == "" {
+		slog.Warn("could not find downloaded file, using configured extension", "extension", opts.FileExtension)
+		downloadedFile = fmt.Sprintf("%s.%s", set.Name, opts.FileExtension)
+		actualExtension = opts.FileExtension
+	} else {
+		slog.Debug("found downloaded file", "file", downloadedFile, "extension", actualExtension)
+	}
+
+	if actualExtension == "" {
+		slog.Warn("empty file extension detected, falling back to configured extension", "extension", opts.FileExtension)
+		actualExtension = opts.FileExtension
+	}
+
+	fileName := fmt.Sprintf("data/%s", downloadedFile)
 
 	if err := p.audioProcessor.ExtractCoverArt(fileName, opts.CoverArtPath); err != nil {
 		return nil, err
@@ -112,7 +146,11 @@ func (p *processor) ProcessTracks(
 		progressbar.OptionSetDescription("[cyan][2/2][reset] Processing tracks..."),
 	)
 
-	return p.splitTracks(*set, *opts, setLength, fileName, bar, progressCallback)
+	// Use the updated ProcessingOptions with the actual extension
+	updatedOpts := opts
+	updatedOpts.FileExtension = actualExtension
+
+	return p.splitTracks(*set, *updatedOpts, setLength, fileName, bar, progressCallback)
 }
 
 func sanitizeTitle(title string) string {
@@ -143,7 +181,7 @@ func (p *processor) splitTracks(
 	errCh := make(chan error, 1)
 	filePathCh := make(chan string, len(set.Tracks))
 
-	slog.Info("Starting track splitting", "trackCount", setLength)
+	slog.Info("Starting track splitting", "trackCount", setLength, "fileExtension", opts.FileExtension)
 	progressCallback(50, "Processing tracks...")
 
 	for i, t := range set.Tracks {
@@ -193,7 +231,7 @@ func (p *processor) splitTracks(
 			totalProgress := 50 + (trackProgress / 2) // Scale to 50-100%
 			bar.Add(1)
 			progressCallback(totalProgress, fmt.Sprintf("Processed %d/%d tracks", newCount, setLength))
-			filePathCh <- outputFile
+			filePathCh <- fmt.Sprintf("%s.%s", outputFile, opts.FileExtension)
 		}(i, t)
 	}
 
@@ -205,7 +243,7 @@ func (p *processor) splitTracks(
 
 	filePaths := make([]string, 0, len(set.Tracks))
 	for path := range filePathCh {
-		filePaths = append(filePaths, fmt.Sprintf("%s.%s", path, opts.FileExtension))
+		filePaths = append(filePaths, path)
 	}
 
 	if err := <-errCh; err != nil {
