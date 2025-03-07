@@ -34,13 +34,6 @@ This project uses GitHub Actions for continuous integration. The following check
 
 - `.github/workflows/ci.yml`: Main CI workflow for linting, testing, and building
 - `.github/workflows/go-test.yml`: Specialized workflow for running tests with coverage reports
-- `.github/workflows/soundcloud-test.yml`: Specialized workflow for SoundCloud downloader tests
-
-### Required Secrets
-
-To run the SoundCloud tests in CI, you need to set up the following secrets in your GitHub repository:
-
-- `SOUNDCLOUD_CLIENT_ID`: Your SoundCloud client ID
 
 ## Development Setup
 

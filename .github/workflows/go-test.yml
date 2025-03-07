@@ -28,9 +28,13 @@ jobs:
         sudo apt-get install -y ffmpeg
 
     - name: Run tests
+      env:
+        SOUNDCLOUD_CLIENT_ID: "test_client_id_for_ci"
       run: go test -v ./...
 
     - name: Run tests with coverage
+      env:
+        SOUNDCLOUD_CLIENT_ID: "test_client_id_for_ci"
       run: go test -v -coverprofile=coverage.out ./...
 
     - name: Generate coverage report

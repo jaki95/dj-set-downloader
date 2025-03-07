@@ -50,6 +50,8 @@ jobs:
         mkdir -p data output
 
     - name: Run tests
+      env:
+        SOUNDCLOUD_CLIENT_ID: "test_client_id_for_ci"
       run: go test -v -race -coverprofile=coverage.out ./...
       
     - name: Upload coverage to Codecov

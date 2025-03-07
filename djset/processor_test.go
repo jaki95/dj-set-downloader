@@ -88,6 +88,11 @@ func createTestFile(t *testing.T, path, content string) {
 }
 
 func TestNew(t *testing.T) {
+	// Setup environment for SoundCloud
+	originalClientID := os.Getenv("SOUNDCLOUD_CLIENT_ID")
+	defer os.Setenv("SOUNDCLOUD_CLIENT_ID", originalClientID) // Restore original value
+	os.Setenv("SOUNDCLOUD_CLIENT_ID", "test_client_id")
+
 	// Setup
 	cfg := &config.Config{
 		AudioSource:     "soundcloud",
