@@ -17,10 +17,9 @@ func TestNewFFMPEGEngine(t *testing.T) {
 
 // Integration test for ExtractCoverArt - requires ffmpeg to be installed
 func TestExtractCoverArt(t *testing.T) {
-	// Skip test if ffmpeg is not available
 	_, err := exec.LookPath("ffmpeg")
 	if err != nil {
-		t.Skip("ffmpeg not found in PATH, skipping test")
+		t.Skip("Skipping integration test")
 	}
 
 	// Create a temporary directory for test files
@@ -30,10 +29,6 @@ func TestExtractCoverArt(t *testing.T) {
 	// For a real test, you'd need to provide a test audio file
 	inputPath := filepath.Join(tempDir, "test_input.mp3")
 	coverPath := filepath.Join(tempDir, "test_cover.jpg")
-
-	// This test would require a real audio file with cover art
-	// Since we don't have one for the test, we'll mark it as skipped
-	t.Skip("This test requires a real audio file with cover art")
 
 	// Setup
 	engine := NewFFMPEGEngine()
@@ -52,7 +47,7 @@ func TestSplit(t *testing.T) {
 	// Skip test if ffmpeg is not available
 	_, err := exec.LookPath("ffmpeg")
 	if err != nil {
-		t.Skip("ffmpeg not found in PATH, skipping test")
+		t.Skip("Skipping integration test")
 	}
 
 	// Create a temporary directory for test files
@@ -63,10 +58,6 @@ func TestSplit(t *testing.T) {
 	inputPath := filepath.Join(tempDir, "test_input.mp3")
 	outputPath := filepath.Join(tempDir, "test_output")
 	coverPath := filepath.Join(tempDir, "test_cover.jpg")
-
-	// This test would require a real audio file
-	// Since we don't have one for the test, we'll mark it as skipped
-	t.Skip("This test requires a real audio file")
 
 	// Setup
 	engine := NewFFMPEGEngine()
