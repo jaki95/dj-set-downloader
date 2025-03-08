@@ -91,9 +91,6 @@ func (p *processor) ProcessTracks(
 	if url == "" {
 		// Try to find the URL using the set name
 		input := fmt.Sprintf("%s %s", set.Artist, set.Name)
-		if !strings.Contains(input, "mix") && !strings.Contains(input, "set") {
-			input = fmt.Sprintf("%s %s DJ set", set.Artist, set.Name)
-		}
 		progressCallback(10, "Searching for set...")
 		input = strings.TrimSpace(input)
 		url, err = p.setDownloader.FindURL(input)
