@@ -13,7 +13,6 @@ import (
 	"github.com/k0kubun/go-ansi"
 	"github.com/schollz/progressbar/v3"
 
-	"github.com/jaki95/dj-set-downloader/config"
 	"github.com/jaki95/dj-set-downloader/internal/audio"
 	"github.com/jaki95/dj-set-downloader/internal/domain"
 	"github.com/jaki95/dj-set-downloader/internal/downloader"
@@ -26,47 +25,6 @@ type processor struct {
 	setDownloader     downloader.Downloader
 	audioProcessor    audio.Processor
 	storage           storage.Storage
-}
-
-func New(cfg *config.Config) (*processor, error) {
-	// Create the track importer
-	trackImporter, err := tracklist.NewImporter(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create tracklist importer: %w", err)
-	}
-
-	// Create the downloader
-	setDownloader, err := downloader.NewDownloader(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create downloader: %w", err)
-	}
-
-	// Create the audio processor
-	var audioProcessor audio.Processor
-	processorType := cfg.AudioProcessor
-	if processorType == "" {
-		processorType = "ffmpeg" // Default to ffmpeg if not specified
-	}
-
-	switch processorType {
-	case "ffmpeg":
-		audioProcessor = audio.NewFFMPEGEngine()
-	default:
-		return nil, fmt.Errorf("unsupported audio processor: %s", processorType)
-	}
-
-	// Create the storage
-	fileStorage, err := storage.NewStorage(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create storage: %w", err)
-	}
-
-	return &processor{
-		tracklistImporter: trackImporter,
-		setDownloader:     setDownloader,
-		audioProcessor:    audioProcessor,
-		storage:           fileStorage,
-	}, nil
 }
 
 type ProcessingOptions struct {

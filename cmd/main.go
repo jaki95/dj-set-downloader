@@ -35,7 +35,7 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.Level(cfg.LogLevel)}))
 	slog.SetDefault(logger)
 
-	processor, err := djset.New(cfg)
+	processor, err := djset.NewProcessor(cfg)
 	if err != nil {
 		slog.Error(err.Error())
 		return

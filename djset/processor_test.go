@@ -167,15 +167,15 @@ func TestNew(t *testing.T) {
 	}
 
 	// Test
-	p, err := New(cfg)
+	p, err := NewProcessor(cfg)
 
 	// Assert
 	assert.NoError(t, err)
 	assert.NotNil(t, p)
-	assert.NotNil(t, p.tracklistImporter)
-	assert.NotNil(t, p.setDownloader)
-	assert.NotNil(t, p.audioProcessor)
-	assert.NotNil(t, p.storage)
+	assert.NotNil(t, p.(*processor).tracklistImporter)
+	assert.NotNil(t, p.(*processor).setDownloader)
+	assert.NotNil(t, p.(*processor).audioProcessor)
+	assert.NotNil(t, p.(*processor).storage)
 }
 
 func TestSanitizeTitle(t *testing.T) {
