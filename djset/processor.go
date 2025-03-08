@@ -185,7 +185,11 @@ func (p *processor) ProcessTracks(
 	if err := p.audioProcessor.ExtractCoverArt(fileName, coverArtPath); err != nil {
 		return nil, fmt.Errorf("failed to extract cover art: %w", err)
 	}
-	defer p.storage.Cleanup()
+	defer func() {
+		if err := p.storage.Cleanup(); err != nil {
+			slog.Error("failed to cleanup storage", "error", err)
+		}
+	}()
 
 	// Create output directory for the set
 	if err := p.storage.CreateSetOutputDir(set.Name); err != nil {
