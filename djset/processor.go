@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/k0kubun/go-ansi"
 	"github.com/schollz/progressbar/v3"
@@ -163,8 +164,36 @@ func (p *processor) ProcessTracks(
 	fileName := p.storage.GetSetPath(set.Name, actualExtension)
 	coverArtPath := p.storage.GetCoverArtPath()
 
+	// Check if the file exists before attempting to extract cover art
+	if !p.storage.FileExists(fileName) {
+		// Try to find the file using its full path
+		files, err := p.storage.ListFiles("", "")
+		if err != nil {
+			return nil, fmt.Errorf("error listing files: %w", err)
+		}
+
+		var matchingFiles []string
+		for _, file := range files {
+			if strings.Contains(strings.ToLower(file), strings.ToLower(set.Name)) {
+				matchingFiles = append(matchingFiles, file)
+			}
+		}
+
+		if len(matchingFiles) > 0 {
+			// Found potential matches
+			errorMsg := fmt.Sprintf("Audio file not found: %s\nPotential matches found:\n", fileName)
+			for i, match := range matchingFiles {
+				errorMsg += fmt.Sprintf("  %d. %s\n", i+1, match)
+			}
+			return nil, fmt.Errorf(errorMsg)
+		}
+
+		return nil, fmt.Errorf("audio file not found: %s (make sure file exists in the download directory)", fileName)
+	}
+
+	slog.Info("Extracting cover art", "set", set.Name, "file", fileName)
 	if err := p.audioProcessor.ExtractCoverArt(fileName, coverArtPath); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to extract cover art: %w", err)
 	}
 	defer p.storage.Cleanup()
 
@@ -208,22 +237,24 @@ func (p *processor) splitTracks(
 	var completedTracks int32 // Atomic counter for completed tracks
 	maxWorkers := opts.MaxConcurrentTasks
 	if maxWorkers < 1 || maxWorkers > 10 {
-		slog.Warn("invalid max workers, defaulting to 1", "maxWorkers", opts.MaxConcurrentTasks)
-		maxWorkers = 1
+		maxWorkers = 4
 	}
-	semaphore := make(chan struct{}, maxWorkers)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	errCh := make(chan error, 1)
 	filePathCh := make(chan string, len(set.Tracks))
+	semaphore := make(chan struct{}, maxWorkers)
 
-	slog.Info("Starting track splitting", "trackCount", setLength, "fileExtension", opts.FileExtension)
-	progressCallback(50, "Processing tracks...")
+	slog.Info("Splitting tracks", "count", len(set.Tracks), "extension", opts.FileExtension)
+	progressCallback(50, fmt.Sprintf("Processing %d tracks", len(set.Tracks)))
 
 	for i, t := range set.Tracks {
 		wg.Add(1)
+		t := t // Capture variable
+		i := i
+
 		go func(i int, t *domain.Track) {
 			defer wg.Done()
 
@@ -239,6 +270,31 @@ func (p *processor) splitTracks(
 				return
 			}
 			defer func() { <-semaphore }()
+
+			// Add a monitoring goroutine to log if processing takes too long
+			processingStartTime := time.Now()
+			trackNumber := i + 1
+			done := make(chan struct{})
+
+			go func() {
+				warningThreshold := 2 * time.Minute
+				ticker := time.NewTicker(warningThreshold)
+				defer ticker.Stop()
+
+				select {
+				case <-done:
+					return
+				case <-ticker.C:
+					elapsed := time.Since(processingStartTime)
+					slog.Warn("Track processing is taking longer than expected",
+						"track", trackNumber,
+						"title", t.Title,
+						"elapsed", elapsed.String(),
+					)
+				}
+			}()
+
+			defer close(done)
 
 			safeTitle := sanitizeTitle(t.Title)
 			trackName := fmt.Sprintf("%02d - %s", i+1, safeTitle)
@@ -269,8 +325,10 @@ func (p *processor) splitTracks(
 			}
 
 			if err := p.audioProcessor.Split(splitParams); err != nil {
+				errorMsg := fmt.Sprintf("Failed to split track %d (%s): %v", i+1, t.Title, err)
+				slog.Error(errorMsg)
 				select {
-				case errCh <- fmt.Errorf("track %d (%s): %w", i+1, t.Title, err):
+				case errCh <- fmt.Errorf("failed to process track %d (%s): %w", i+1, t.Title, err):
 					cancel()
 				default:
 				}
