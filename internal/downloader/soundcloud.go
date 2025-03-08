@@ -113,8 +113,6 @@ func readOutputAndReportProgress(stderr io.ReadCloser, bar *progressbar.Progress
 	var lineBuffer bytes.Buffer
 	var lastProgress int
 
-	progressCallback(0, "Downloading set...")
-
 	output := make([]byte, 1)
 	for {
 		_, err := stderr.Read(output)
