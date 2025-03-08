@@ -89,23 +89,19 @@ func (p *processor) ProcessTracks(
 
 	url := opts.DJSetURL
 	if url == "" {
-		if opts.DJSetURL != "" {
-			url = opts.DJSetURL
-		} else {
-			// Try to find the URL using the set name
-			input := fmt.Sprintf("%s %s", set.Artist, set.Name)
-			if !strings.Contains(input, "mix") && !strings.Contains(input, "set") {
-				input = fmt.Sprintf("%s %s DJ set", set.Artist, set.Name)
-			}
-			progressCallback(10, "Searching for set...")
-			input = strings.TrimSpace(input)
-			url, err = p.setDownloader.FindURL(input)
-			if err != nil {
-				return nil, err
-			}
+		// Try to find the URL using the set name
+		input := fmt.Sprintf("%s %s", set.Artist, set.Name)
+		if !strings.Contains(input, "mix") && !strings.Contains(input, "set") {
+			input = fmt.Sprintf("%s %s DJ set", set.Artist, set.Name)
 		}
-		slog.Debug("found match", "url", url)
+		progressCallback(10, "Searching for set...")
+		input = strings.TrimSpace(input)
+		url, err = p.setDownloader.FindURL(input)
+		if err != nil {
+			return nil, err
+		}
 	}
+	slog.Debug("found match", "url", url)
 
 	// Get the download directory from storage
 	downloadPath, err := p.getDownloadPath()
