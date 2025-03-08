@@ -1,14 +1,17 @@
 package djset
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/jaki95/dj-set-downloader/config"
 	"github.com/jaki95/dj-set-downloader/internal/audio"
 	"github.com/jaki95/dj-set-downloader/internal/domain"
+	"github.com/schollz/progressbar/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -258,4 +261,278 @@ func TestDownloadProgressCalculation(t *testing.T) {
 
 	// - 100% download progress should be reported as 60%
 	assert.Equal(t, 60, progressValues[len(progressValues)-1], "100% download should be reported as 60%")
+}
+
+func TestGetMaxWorkers(t *testing.T) {
+	// Create test processor directly
+	p := &processor{}
+
+	// Test cases
+	testCases := []struct {
+		name     string
+		input    int
+		expected int
+	}{
+		{"Zero value", 0, 4},
+		{"Negative value", -5, 4},
+		{"Valid low value", 2, 2},
+		{"Valid high value", 8, 8},
+		{"Exceeds max limit", 12, 4},
+	}
+
+	// Test each case
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := p.getMaxWorkers(tc.input)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestMonitorTrackProcessing(t *testing.T) {
+	// Create test processor directly
+	p := &processor{}
+	trackNumber := 1
+	trackTitle := "Test Track"
+	startTime := time.Now()
+
+	// First test: normal case (done channel closes quickly)
+	t.Run("Normal processing", func(t *testing.T) {
+		done := make(chan struct{})
+
+		// Close the done channel immediately to simulate normal processing
+		go func() {
+			time.Sleep(10 * time.Millisecond)
+			close(done)
+		}()
+
+		// This should exit quickly without logging
+		p.monitorTrackProcessing(done, startTime, trackNumber, trackTitle)
+		// No assertion needed - if it blocks, the test will time out
+	})
+
+	// Second test: simulate a timeout
+	// This is harder to test directly since it would require hooking into the log system
+	// But we can at least verify it doesn't panic or crash
+	t.Run("Long processing simulation", func(t *testing.T) {
+		// Use a never-closing channel to simulate slow processing
+		neverDone := make(chan struct{})
+
+		// Run in goroutine with timeout to prevent test from hanging
+		processingComplete := make(chan struct{})
+		go func() {
+			// We can't easily mock time.NewTicker, so we'll just let it run
+			// and have our test timeout mechanism ensure it doesn't hang
+
+			// This should trigger the warning log
+			p.monitorTrackProcessing(neverDone, startTime, trackNumber, trackTitle)
+			close(processingComplete)
+		}()
+
+		// Add a timeout for the test itself
+		select {
+		case <-processingComplete:
+			// Function completed - this should never happen in our test setup
+			assert.Fail(t, "Monitor should not have returned")
+		case <-time.After(100 * time.Millisecond):
+			// This is expected - the function is still running as it should
+		}
+	})
+}
+
+func TestUpdateTrackProgress(t *testing.T) {
+	// Create test processor directly
+	p := &processor{}
+
+	// Mock progress bar
+	bar := &progressbar.ProgressBar{}
+
+	// Track completed tracks
+	var completedTracks int32 = 5
+	totalTracks := 10
+
+	// Track progress updates
+	var capturedProgress int
+	var capturedMessage string
+	progressCallback := func(progress int, message string) {
+		capturedProgress = progress
+		capturedMessage = message
+	}
+
+	// Call the function
+	p.updateTrackProgress(bar, &completedTracks, totalTracks, progressCallback)
+
+	// Verify the counter was incremented
+	assert.Equal(t, int32(6), completedTracks)
+
+	// Verify progress calculation (should be in 50-100% range)
+	// 6/10 = 60% of track processing, scaled to 50-100% range: 50 + (60/2) = 80%
+	assert.Equal(t, 80, capturedProgress)
+
+	// Verify message format
+	assert.Equal(t, "Processed 6/10 tracks", capturedMessage)
+}
+
+func TestProcessTrack(t *testing.T) {
+	// This is more of an integration test since it involves multiple components
+	// For a real test we'd need to mock more interactions
+
+	// Setup mocked dependencies
+	trackImporter := new(MockTracklistImporter)
+	downloader := new(MockDownloader)
+	audioProcessor := new(MockAudioProcessor)
+	storage := new(MockStorage)
+
+	// Create processor directly
+	p := &processor{
+		tracklistImporter: trackImporter,
+		setDownloader:     downloader,
+		audioProcessor:    audioProcessor,
+		storage:           storage,
+	}
+
+	// Mock context and channels
+	ctx := context.Background()
+	cancel := func() {}
+	errCh := make(chan error, 1)
+	filePathCh := make(chan string, 1)
+
+	// Mock the audio processor split method
+	audioProcessor.On("Split", mock.AnythingOfType("audio.SplitParams")).Return(nil)
+
+	// Mock storage
+	storage.On("SaveTrack", mock.Anything, mock.Anything, mock.Anything).Return("/tmp/output/test/track", nil)
+
+	// Setup test data
+	trackIndex := 0
+	track := &domain.Track{
+		Title:       "Test Track",
+		Artist:      "Test Artist",
+		TrackNumber: 1,
+		StartTime:   "00:00:00",
+		EndTime:     "01:00:00",
+	}
+	set := domain.Tracklist{
+		Name:   "Test Set",
+		Artist: "Various Artists",
+	}
+	opts := ProcessingOptions{
+		FileExtension: "mp3",
+	}
+	setLength := 1
+	fileName := "test.mp3"
+	coverArtPath := "cover.jpg"
+
+	// Prepare progress tracking
+	var completedTracks int32 = 0
+	bar := progressbar.NewOptions(setLength)
+
+	// Track progress updates
+	var capturedProgress int
+	progressCallback := func(progress int, message string) {
+		capturedProgress = progress
+	}
+
+	// Run the process track function
+	p.processTrack(
+		ctx, cancel,
+		trackIndex, track,
+		set, opts,
+		setLength,
+		fileName, coverArtPath,
+		bar,
+		&completedTracks,
+		errCh,
+		filePathCh,
+		progressCallback,
+	)
+
+	// Verify a file path was sent to the channel
+	select {
+	case path := <-filePathCh:
+		assert.Equal(t, "/tmp/output/test/track.mp3", path)
+	default:
+		assert.Fail(t, "No file path was sent to the channel")
+	}
+
+	// Verify no errors were sent
+	select {
+	case err := <-errCh:
+		assert.Fail(t, "Unexpected error: %v", err)
+	default:
+		// This is expected - no errors
+	}
+
+	// Verify progress was updated
+	assert.Equal(t, int32(1), completedTracks)
+	assert.Greater(t, capturedProgress, 0)
+
+	// Verify the mocks were called correctly
+	audioProcessor.AssertExpectations(t)
+	storage.AssertExpectations(t)
+}
+
+func TestSplitTracks(t *testing.T) {
+	// Setup mocked dependencies
+	trackImporter := new(MockTracklistImporter)
+	downloader := new(MockDownloader)
+	audioProcessor := new(MockAudioProcessor)
+	storage := new(MockStorage)
+
+	// Create processor directly
+	p := &processor{
+		tracklistImporter: trackImporter,
+		setDownloader:     downloader,
+		audioProcessor:    audioProcessor,
+		storage:           storage,
+	}
+
+	// Create a test tracklist
+	set := domain.Tracklist{
+		Name:   "Test Set",
+		Artist: "Various Artists",
+		Tracks: []*domain.Track{
+			{Title: "Track 1", Artist: "Artist 1", TrackNumber: 1, StartTime: "00:00", EndTime: "01:00"},
+			{Title: "Track 2", Artist: "Artist 2", TrackNumber: 2, StartTime: "01:00", EndTime: "02:00"},
+		},
+	}
+
+	// Define options
+	opts := ProcessingOptions{
+		MaxConcurrentTasks: 2,
+		FileExtension:      "mp3",
+	}
+
+	// Setup mocks
+	storage.On("SaveTrack", mock.Anything, mock.Anything, mock.Anything).Return("/tmp/test/track", nil)
+	audioProcessor.On("Split", mock.AnythingOfType("audio.SplitParams")).Return(nil)
+
+	// Setup progress tracking
+	progressUpdates := []int{}
+	progressCallback := func(progress int, message string) {
+		progressUpdates = append(progressUpdates, progress)
+	}
+
+	// Call the function
+	results, err := p.splitTracks(
+		set,
+		opts,
+		len(set.Tracks),
+		"test.mp3",
+		"cover.jpg",
+		progressbar.NewOptions(len(set.Tracks)),
+		progressCallback,
+	)
+
+	// Verify results
+	assert.NoError(t, err)
+	assert.Len(t, results, 2)
+
+	// Verify progress tracking
+	assert.GreaterOrEqual(t, len(progressUpdates), 3)             // Should have at least start, per-track, and complete updates
+	assert.Equal(t, 100, progressUpdates[len(progressUpdates)-1]) // Last update should be 100%
+
+	// Verify mocks were called correctly
+	storage.AssertExpectations(t)
+	audioProcessor.AssertExpectations(t)
 }

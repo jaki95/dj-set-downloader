@@ -191,23 +191,27 @@ func (p *processor) splitTracks(
 	bar *progressbar.ProgressBar,
 	progressCallback func(int, string),
 ) ([]string, error) {
-	var wg sync.WaitGroup
-	var completedTracks int32 // Atomic counter for completed tracks
-	maxWorkers := opts.MaxConcurrentTasks
-	if maxWorkers < 1 || maxWorkers > 10 {
-		maxWorkers = 4
-	}
+	// Configure worker pool
+	maxWorkers := p.getMaxWorkers(opts.MaxConcurrentTasks)
 
+	// Setup processing context and channels
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Setup channels for communication
 	errCh := make(chan error, 1)
 	filePathCh := make(chan string, len(set.Tracks))
 	semaphore := make(chan struct{}, maxWorkers)
 
+	// Start initial progress
 	slog.Info("Splitting tracks", "count", len(set.Tracks), "extension", opts.FileExtension)
 	progressCallback(50, fmt.Sprintf("Processing %d tracks", len(set.Tracks)))
 
+	// Start track processing with a pool of workers
+	var wg sync.WaitGroup
+	var completedTracks int32 // Atomic counter for completed tracks
+
+	// Launch worker goroutines for each track
 	for i, t := range set.Tracks {
 		wg.Add(1)
 		t := t // Capture variable
@@ -216,12 +220,14 @@ func (p *processor) splitTracks(
 		go func(i int, t *domain.Track) {
 			defer wg.Done()
 
+			// Check if processing should be canceled
 			select {
 			case <-ctx.Done():
 				return
 			default:
 			}
 
+			// Acquire semaphore slot or abort if canceled
 			select {
 			case semaphore <- struct{}{}:
 			case <-ctx.Done():
@@ -229,94 +235,36 @@ func (p *processor) splitTracks(
 			}
 			defer func() { <-semaphore }()
 
-			// Add a monitoring goroutine to log if processing takes too long
-			processingStartTime := time.Now()
-			trackNumber := i + 1
-			done := make(chan struct{})
-
-			go func() {
-				warningThreshold := 2 * time.Minute
-				ticker := time.NewTicker(warningThreshold)
-				defer ticker.Stop()
-
-				select {
-				case <-done:
-					return
-				case <-ticker.C:
-					elapsed := time.Since(processingStartTime)
-					slog.Warn("Track processing is taking longer than expected",
-						"track", trackNumber,
-						"title", t.Title,
-						"elapsed", elapsed.String(),
-					)
-				}
-			}()
-
-			defer close(done)
-
-			safeTitle := sanitizeTitle(t.Title)
-			trackName := fmt.Sprintf("%02d - %s", i+1, safeTitle)
-
-			// Get the output path from the storage layer
-			outputPath, err := p.storage.SaveTrack(set.Name, trackName, opts.FileExtension)
-			if err != nil {
-				select {
-				case errCh <- fmt.Errorf("failed to create output path for track %d (%s): %w", i+1, t.Title, err):
-					cancel()
-				default:
-				}
-				return
-			}
-
-			// Remove the extension as the audio processor will add it
-			outputPath = strings.TrimSuffix(outputPath, "."+opts.FileExtension)
-
-			splitParams := audio.SplitParams{
-				InputPath:     fileName,
-				OutputPath:    outputPath,
-				FileExtension: opts.FileExtension,
-				Track:         *t,
-				TrackCount:    setLength,
-				Artist:        set.Artist,
-				Name:          set.Name,
-				CoverArtPath:  coverArtPath,
-			}
-
-			if err := p.audioProcessor.Split(splitParams); err != nil {
-				errorMsg := fmt.Sprintf("Failed to split track %d (%s): %v", i+1, t.Title, err)
-				slog.Error(errorMsg)
-				select {
-				case errCh <- fmt.Errorf("failed to process track %d (%s): %w", i+1, t.Title, err):
-					cancel()
-				default:
-				}
-				return
-			}
-
-			// Increment completed tracks atomically
-			newCount := atomic.AddInt32(&completedTracks, 1)
-			trackProgress := int((float64(newCount) / float64(setLength)) * 100)
-			totalProgress := 50 + (trackProgress / 2) // Scale to 50-100%
-			_ = bar.Add(1)
-			progressCallback(totalProgress, fmt.Sprintf("Processed %d/%d tracks", newCount, setLength))
-
-			// Add the full path to the result channel
-			finalPath := fmt.Sprintf("%s.%s", outputPath, opts.FileExtension)
-			filePathCh <- finalPath
+			// Process the track and handle errors
+			p.processTrack(
+				ctx, cancel,
+				i, t,
+				set, opts,
+				setLength,
+				fileName, coverArtPath,
+				bar,
+				&completedTracks,
+				errCh,
+				filePathCh,
+				progressCallback,
+			)
 		}(i, t)
 	}
 
+	// Wait for all workers to complete and gather results
 	go func() {
 		wg.Wait()
 		close(filePathCh)
 		close(errCh)
 	}()
 
+	// Collect file paths from successful operations
 	filePaths := make([]string, 0, len(set.Tracks))
 	for path := range filePathCh {
 		filePaths = append(filePaths, path)
 	}
 
+	// Check if any errors occurred
 	if err := <-errCh; err != nil {
 		return nil, err
 	}
@@ -324,6 +272,130 @@ func (p *processor) splitTracks(
 	slog.Info("Splitting completed")
 	progressCallback(100, "Processing completed")
 	return filePaths, nil
+}
+
+// getMaxWorkers returns a valid number of concurrent workers
+func (p *processor) getMaxWorkers(requested int) int {
+	if requested < 1 || requested > 10 {
+		return 4 // Default value
+	}
+	return requested
+}
+
+// processTrack handles the processing of a single track
+func (p *processor) processTrack(
+	ctx context.Context,
+	cancel context.CancelFunc,
+	trackIndex int,
+	track *domain.Track,
+	set domain.Tracklist,
+	opts ProcessingOptions,
+	setLength int,
+	fileName string,
+	coverArtPath string,
+	bar *progressbar.ProgressBar,
+	completedTracks *int32,
+	errCh chan<- error,
+	filePathCh chan<- string,
+	progressCallback func(int, string),
+) {
+	// Set up monitoring for long-running operations
+	processingStartTime := time.Now()
+	trackNumber := trackIndex + 1
+	done := make(chan struct{})
+
+	// Monitor for slow track processing
+	go p.monitorTrackProcessing(done, processingStartTime, trackNumber, track.Title)
+	defer close(done)
+
+	// Create track name with proper numbering
+	safeTitle := sanitizeTitle(track.Title)
+	trackName := fmt.Sprintf("%02d - %s", trackNumber, safeTitle)
+
+	// Get the output path from the storage layer
+	outputPath, err := p.storage.SaveTrack(set.Name, trackName, opts.FileExtension)
+	if err != nil {
+		select {
+		case errCh <- fmt.Errorf("failed to create output path for track %d (%s): %w",
+			trackNumber, track.Title, err):
+			cancel()
+		default:
+		}
+		return
+	}
+
+	// Remove the extension as the audio processor will add it
+	outputPath = strings.TrimSuffix(outputPath, "."+opts.FileExtension)
+
+	// Create parameters for audio processor
+	splitParams := audio.SplitParams{
+		InputPath:     fileName,
+		OutputPath:    outputPath,
+		FileExtension: opts.FileExtension,
+		Track:         *track,
+		TrackCount:    setLength,
+		Artist:        set.Artist,
+		Name:          set.Name,
+		CoverArtPath:  coverArtPath,
+	}
+
+	// Process the track
+	if err := p.audioProcessor.Split(splitParams); err != nil {
+		errorMsg := fmt.Sprintf("Failed to split track %d (%s): %v", trackNumber, track.Title, err)
+		slog.Error(errorMsg)
+		select {
+		case errCh <- fmt.Errorf("failed to process track %d (%s): %w", trackNumber, track.Title, err):
+			cancel()
+		default:
+		}
+		return
+	}
+
+	// Update progress
+	p.updateTrackProgress(bar, completedTracks, setLength, progressCallback)
+
+	// Add the full path to the result channel
+	finalPath := fmt.Sprintf("%s.%s", outputPath, opts.FileExtension)
+	filePathCh <- finalPath
+}
+
+// monitorTrackProcessing logs a warning if track processing takes too long
+func (p *processor) monitorTrackProcessing(
+	done <-chan struct{},
+	startTime time.Time,
+	trackNumber int,
+	trackTitle string,
+) {
+	warningThreshold := 2 * time.Minute
+	ticker := time.NewTicker(warningThreshold)
+	defer ticker.Stop()
+
+	select {
+	case <-done:
+		return
+	case <-ticker.C:
+		elapsed := time.Since(startTime)
+		slog.Warn("Track processing is taking longer than expected",
+			"track", trackNumber,
+			"title", trackTitle,
+			"elapsed", elapsed.String(),
+		)
+	}
+}
+
+// updateTrackProgress updates the progress indicators for track processing
+func (p *processor) updateTrackProgress(
+	bar *progressbar.ProgressBar,
+	completedTracks *int32,
+	setLength int,
+	progressCallback func(int, string),
+) {
+	// Increment completed tracks atomically
+	newCount := atomic.AddInt32(completedTracks, 1)
+	trackProgress := int((float64(newCount) / float64(setLength)) * 100)
+	totalProgress := 50 + (trackProgress / 2) // Scale to 50-100%
+	_ = bar.Add(1)
+	progressCallback(totalProgress, fmt.Sprintf("Processed %d/%d tracks", newCount, setLength))
 }
 
 // Helper method to get the download path
