@@ -10,14 +10,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/k0kubun/go-ansi"
-	"github.com/schollz/progressbar/v3"
-
 	"github.com/jaki95/dj-set-downloader/internal/audio"
 	"github.com/jaki95/dj-set-downloader/internal/domain"
 	"github.com/jaki95/dj-set-downloader/internal/downloader"
 	"github.com/jaki95/dj-set-downloader/internal/storage"
 	"github.com/jaki95/dj-set-downloader/internal/tracklist"
+	"github.com/k0kubun/go-ansi"
+	"github.com/schollz/progressbar/v3"
 )
 
 type processor struct {
@@ -34,37 +33,94 @@ type ProcessingOptions struct {
 	MaxConcurrentTasks int
 }
 
-func (p *processor) ProcessTracks(
-	opts *ProcessingOptions,
-	progressCallback func(int, string),
-) ([]string, error) {
-	set, err := p.tracklistImporter.Import(opts.TracklistPath)
+// processingContext encapsulates all state and options needed during processing
+type processingContext struct {
+	opts             *ProcessingOptions
+	progressCallback func(int, string)
+	set              *domain.Tracklist
+	setLength        int
+
+	// File information
+	fileName        string
+	downloadedFile  string
+	actualExtension string
+	coverArtPath    string
+}
+
+// newProcessingContext creates a new processing context with the given options
+func newProcessingContext(opts *ProcessingOptions, progressCallback func(int, string)) *processingContext {
+	return &processingContext{
+		opts:             opts,
+		progressCallback: progressCallback,
+		setLength:        0, // Will be set after importing tracklist
+	}
+}
+
+func (p *processor) ProcessTracks(opts *ProcessingOptions, progressCallback func(int, string)) ([]string, error) {
+	// Setup a processing context
+	ctx := newProcessingContext(opts, progressCallback)
+
+	// Step 1: Import tracklist
+	if err := p.importTracklist(ctx); err != nil {
+		return nil, err
+	}
+
+	// Step 2: Download set if needed
+	if err := p.downloadSet(ctx); err != nil {
+		return nil, err
+	}
+
+	// Step 3: Prepare for processing (find files, extract cover art)
+	if err := p.prepareForProcessing(ctx); err != nil {
+		return nil, err
+	}
+
+	// Step 4: Split tracks
+	results, err := p.processTracks(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	progressCallback(10, "Got tracklist")
+	return results, nil
+}
 
-	setLength := len(set.Tracks)
+func (p *processor) importTracklist(ctx *processingContext) error {
+	set, err := p.tracklistImporter.Import(ctx.opts.TracklistPath)
+	if err != nil {
+		return err
+	}
 
-	url := opts.DJSetURL
+	// Store the tracklist in the context
+	ctx.set = set
+	ctx.setLength = len(set.Tracks)
+
+	// Report progress
+	ctx.progressCallback(10, "Got tracklist")
+	return nil
+}
+
+func (p *processor) downloadSet(ctx *processingContext) error {
+	url := ctx.opts.DJSetURL
+	var err error
+
 	if url == "" {
 		// Try to find the URL using the user's search query if available, otherwise use metadata
 		var input string
-		if !strings.Contains(opts.TracklistPath, "https://") {
-			// Use the user's search query
-			input = opts.TracklistPath
-			slog.Debug("using user-provided search query", "query", input)
+		if ctx.opts.TracklistPath != "" && strings.HasPrefix(ctx.opts.TracklistPath, "http") {
+			// If the tracklist path looks like a URL, use it directly
+			input = ctx.opts.TracklistPath
 		} else {
-			// Fall back to constructing query from tracklist metadata
-			input = fmt.Sprintf("%s %s", set.Artist, set.Name)
-			slog.Debug("using tracklist metadata for search", "artist", set.Artist, "name", set.Name)
+			// Otherwise, use the set name and artist
+			input = ctx.set.Name
+			if ctx.set.Artist != "" {
+				input = fmt.Sprintf("%s %s", ctx.set.Artist, input)
+			}
 		}
 
 		input = strings.TrimSpace(input)
 		url, err = p.setDownloader.FindURL(input)
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
 	slog.Debug("found match", "url", url)
@@ -72,82 +128,86 @@ func (p *processor) ProcessTracks(
 	// Get the download directory from storage
 	downloadPath, err := p.getDownloadPath()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get download path: %w", err)
+		return fmt.Errorf("failed to get download path: %w", err)
 	}
 
 	slog.Debug("downloading set", "url", url, "downloadPath", downloadPath)
 
-	err = p.setDownloader.Download(url, set.Name, downloadPath, func(progress int, message string) {
+	err = p.setDownloader.Download(url, ctx.set.Name, downloadPath, func(progress int, message string) {
 		// Adjust the progress calculation to ensure it never goes negative
 		// Scale the original 0-100% to 10-50% range
-		adjustedProgress := 10 + (progress / 2)
-		progressCallback(adjustedProgress, message)
+		adjustedProgress := 10 + (progress / 2) // This ensures progress starts at 10% and goes up to 50%
+		ctx.progressCallback(adjustedProgress, message)
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
 
+	return nil
+}
+
+func (p *processor) prepareForProcessing(ctx *processingContext) error {
 	// Find files in the data directory that match the set name
 	// This will be encapsulated in storage later
-	files, err := p.storage.ListFiles("", set.Name)
+	files, err := p.storage.ListFiles("", ctx.set.Name)
 	if err != nil {
-		return nil, fmt.Errorf("error listing files: %w", err)
+		return fmt.Errorf("error listing files: %w", err)
 	}
 
 	slog.Debug("found files", "files", files)
 
-	var downloadedFile string
-	var actualExtension string
+	ctx.downloadedFile = ""
+	ctx.actualExtension = ""
 
 	for _, filePath := range files {
 		fileName := filepath.Base(filePath)
-		if strings.HasPrefix(fileName, set.Name) {
-			downloadedFile = fileName
-			parts := strings.Split(downloadedFile, ".")
+		if strings.HasPrefix(fileName, ctx.set.Name) {
+			ctx.downloadedFile = fileName
+			parts := strings.Split(ctx.downloadedFile, ".")
 			if len(parts) > 1 {
-				actualExtension = parts[len(parts)-1]
+				ctx.actualExtension = parts[len(parts)-1]
 			} else {
 				// If no extension found, fall back to config
-				actualExtension = opts.FileExtension
+				ctx.actualExtension = ctx.opts.FileExtension
 			}
 			break
 		}
 	}
 
 	// Get the file path from storage
-	fileName := p.storage.GetSetPath(set.Name, actualExtension)
-	coverArtPath := p.storage.GetCoverArtPath()
+	ctx.fileName = p.storage.GetSetPath(ctx.set.Name, ctx.actualExtension)
+	ctx.coverArtPath = p.storage.GetCoverArtPath()
 
 	// Check if the file exists before attempting to extract cover art
-	if !p.storage.FileExists(fileName) {
+	if !p.storage.FileExists(ctx.fileName) {
 		// Try to find the file using its full path
 		files, err := p.storage.ListFiles("", "")
 		if err != nil {
-			return nil, fmt.Errorf("error listing files: %w", err)
+			return fmt.Errorf("error listing files: %w", err)
 		}
 
 		var matchingFiles []string
 		for _, file := range files {
-			if strings.Contains(strings.ToLower(file), strings.ToLower(set.Name)) {
+			if strings.Contains(strings.ToLower(file), strings.ToLower(ctx.set.Name)) {
 				matchingFiles = append(matchingFiles, file)
 			}
 		}
 
 		if len(matchingFiles) > 0 {
 			// Found potential matches
-			errorMsg := fmt.Sprintf("Audio file not found: %s\nPotential matches found:\n", fileName)
+			errorMsg := fmt.Sprintf("Audio file not found: %s\nPotential matches found:\n", ctx.fileName)
 			for i, match := range matchingFiles {
 				errorMsg += fmt.Sprintf("  %d. %s\n", i+1, match)
 			}
-			return nil, fmt.Errorf("%s", errorMsg)
+			return fmt.Errorf("%s", errorMsg)
 		}
 
-		return nil, fmt.Errorf("audio file not found: %s (make sure file exists in the download directory)", fileName)
+		return fmt.Errorf("audio file not found: %s (make sure file exists in the download directory)", ctx.fileName)
 	}
 
-	slog.Info("Extracting cover art", "set", set.Name, "file", fileName)
-	if err := p.audioProcessor.ExtractCoverArt(fileName, coverArtPath); err != nil {
-		return nil, fmt.Errorf("failed to extract cover art: %w", err)
+	slog.Info("Extracting cover art", "set", ctx.set.Name, "file", ctx.fileName)
+	if err := p.audioProcessor.ExtractCoverArt(ctx.fileName, ctx.coverArtPath); err != nil {
+		return fmt.Errorf("failed to extract cover art: %w", err)
 	}
 	defer func() {
 		if err := p.storage.Cleanup(); err != nil {
@@ -156,12 +216,16 @@ func (p *processor) ProcessTracks(
 	}()
 
 	// Create output directory for the set
-	if err := p.storage.CreateSetOutputDir(set.Name); err != nil {
-		return nil, fmt.Errorf("failed to create output directory: %w", err)
+	if err := p.storage.CreateSetOutputDir(ctx.set.Name); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
+	return nil
+}
+
+func (p *processor) processTracks(ctx *processingContext) ([]string, error) {
 	bar := progressbar.NewOptions(
-		setLength,
+		ctx.setLength,
 		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
 		progressbar.OptionEnableColorCodes(true),
 		progressbar.OptionSetTheme(progressbar.ThemeASCII),
@@ -171,10 +235,10 @@ func (p *processor) ProcessTracks(
 	)
 
 	// Use the updated ProcessingOptions with the actual extension
-	updatedOpts := opts
-	updatedOpts.FileExtension = actualExtension
+	updatedOpts := *ctx.opts
+	updatedOpts.FileExtension = ctx.actualExtension
 
-	return p.splitTracks(*set, *updatedOpts, setLength, fileName, coverArtPath, bar, progressCallback)
+	return p.splitTracks(*ctx.set, updatedOpts, ctx.setLength, ctx.fileName, ctx.coverArtPath, bar, ctx.progressCallback)
 }
 
 func sanitizeTitle(title string) string {
