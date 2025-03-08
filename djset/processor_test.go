@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -508,9 +509,12 @@ func TestSplitTracks(t *testing.T) {
 	storage.On("SaveTrack", mock.Anything, mock.Anything, mock.Anything).Return("/tmp/test/track", nil)
 	audioProcessor.On("Split", mock.AnythingOfType("audio.SplitParams")).Return(nil)
 
-	// Setup progress tracking
+	// Setup progress tracking with mutex to prevent data races
+	var mu sync.Mutex
 	progressUpdates := []int{}
 	progressCallback := func(progress int, message string) {
+		mu.Lock()
+		defer mu.Unlock()
 		progressUpdates = append(progressUpdates, progress)
 	}
 
@@ -529,7 +533,9 @@ func TestSplitTracks(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, results, 2)
 
-	// Verify progress tracking
+	// Verify progress tracking - access the slice after all processing is done
+	mu.Lock()
+	defer mu.Unlock()
 	assert.GreaterOrEqual(t, len(progressUpdates), 3)             // Should have at least start, per-track, and complete updates
 	assert.Equal(t, 100, progressUpdates[len(progressUpdates)-1]) // Last update should be 100%
 
@@ -1070,10 +1076,13 @@ func TestProcessTracks(t *testing.T) {
 	audioProcessor.On("ExtractCoverArt", "/tmp/downloads/Test Set.mp3", "/tmp/cover.jpg").Return(nil)
 	audioProcessor.On("Split", mock.AnythingOfType("audio.SplitParams")).Return(nil)
 
-	// Track progress updates
+	// Track progress updates with mutex to prevent data races
+	var mu sync.Mutex
 	progressUpdates := []int{}
 	messageUpdates := []string{}
 	progressCallback := func(progress int, message string) {
+		mu.Lock()
+		defer mu.Unlock()
 		progressUpdates = append(progressUpdates, progress)
 		messageUpdates = append(messageUpdates, message)
 	}
@@ -1085,7 +1094,9 @@ func TestProcessTracks(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, results)
 
-	// Verify progress reporting
+	// Verify progress reporting - access the slices after all processing is done
+	mu.Lock()
+	defer mu.Unlock()
 	assert.Greater(t, len(progressUpdates), 0)
 	assert.Greater(t, len(messageUpdates), 0)
 
