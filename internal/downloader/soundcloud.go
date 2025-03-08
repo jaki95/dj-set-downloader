@@ -71,14 +71,14 @@ func (s *soundCloudClient) FindURL(query string) (string, error) {
 	return firstResult["permalink_url"].(string), nil
 }
 
-func (s *soundCloudClient) Download(trackURL, name string, progressCallback func(int, string)) error {
+func (s *soundCloudClient) Download(trackURL, name string, downloadPath string, progressCallback func(int, string)) error {
 	slog.Debug("downloading set")
-	cmd := exec.Command("scdl", "-l", trackURL, "--name-format", name, "--path", "data")
+	cmd := exec.Command("scdl", "-l", trackURL, "--name-format", name, "--path", downloadPath)
 	cmd.Env = append(os.Environ(), "PYTHONUNBUFFERED=1")
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		return fmt.Errorf("stderr pipe error: %w", err)
+		return fmt.Errorf("failed to get stderr pipe: %w", err)
 	}
 
 	bar := progressbar.NewOptions(

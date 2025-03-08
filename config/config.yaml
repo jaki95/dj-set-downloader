@@ -19,3 +19,6 @@ storage:
   # object_prefix: dj-sets
   # credentials_file: path/to/credentials.json
   # public_base_url: https://storage.googleapis.com/your-bucket-name
+  
+  # Note: when using GCS, temp_dir is still required for local temporary file storage
+  # Make sure temp_dir is writable when using GCS storage

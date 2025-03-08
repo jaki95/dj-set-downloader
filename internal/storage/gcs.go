@@ -57,8 +57,14 @@ func NewGCSStorage(ctx context.Context, bucketName, objectPrefix, tempDir, crede
 
 // SaveDownloadedSet returns the path for storing a downloaded set
 func (s *GCSStorage) SaveDownloadedSet(setName string, ext string) (string, error) {
-	// For downloads, we'll save to a temporary file first and then upload
+	// For downloads, we'll always save to a temporary file first
 	tempFile := filepath.Join(s.tempDir, fmt.Sprintf("%s.%s", setName, ext))
+
+	// Create the temp directory if it doesn't exist
+	if err := os.MkdirAll(s.tempDir, os.ModePerm); err != nil {
+		return "", fmt.Errorf("failed to create temp directory: %w", err)
+	}
+
 	return tempFile, nil
 }
 

@@ -1,11 +1,9 @@
 package djset
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -90,15 +88,15 @@ func (p *processor) ProcessTracks(
 
 	url := opts.DJSetURL
 	if url == "" {
-		findQuery := fmt.Sprintf("%s %s", set.Name, set.Artist)
-		url, err = p.setDownloader.FindURL(findQuery)
-		if err != nil {
-			fmt.Println("could not find match, input name of set:")
-			reader := bufio.NewReader(os.Stdin)
-			input, err := reader.ReadString('\n')
-			if err != nil {
-				return nil, err
+		if opts.DJSetURL != "" {
+			url = opts.DJSetURL
+		} else {
+			// Try to find the URL using the set name
+			input := fmt.Sprintf("%s %s", set.Artist, set.Name)
+			if !strings.Contains(input, "mix") && !strings.Contains(input, "set") {
+				input = fmt.Sprintf("%s %s DJ set", set.Artist, set.Name)
 			}
+			progressCallback(10, "Searching for set...")
 			input = strings.TrimSpace(input)
 			url, err = p.setDownloader.FindURL(input)
 			if err != nil {
@@ -108,7 +106,13 @@ func (p *processor) ProcessTracks(
 		slog.Debug("found match", "url", url)
 	}
 
-	err = p.setDownloader.Download(url, set.Name, func(progress int, message string) {
+	// Get the download directory from storage
+	downloadPath, err := p.getDownloadPath()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get download path: %w", err)
+	}
+
+	err = p.setDownloader.Download(url, set.Name, downloadPath, func(progress int, message string) {
 		totalProgress := progress / 2 // Scale to 0-50%
 		progressCallback(totalProgress, message)
 	})
@@ -304,4 +308,17 @@ func (p *processor) splitTracks(
 	slog.Info("Splitting completed")
 	progressCallback(100, "Processing completed")
 	return filePaths, nil
+}
+
+// Helper method to get the download path
+func (p *processor) getDownloadPath() (string, error) {
+	// For GCS, this will return the temp directory
+	// For local storage, it will return the data directory
+	tempFile, err := p.storage.SaveDownloadedSet("temp", "tmp")
+	if err != nil {
+		return "", err
+	}
+
+	// Return just the directory path
+	return filepath.Dir(tempFile), nil
 }

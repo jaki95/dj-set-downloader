@@ -35,8 +35,8 @@ func (m *MockDownloader) FindURL(trackQuery string) (string, error) {
 	return args.String(0), args.Error(1)
 }
 
-func (m *MockDownloader) Download(trackURL, name string, progressCallback func(int, string)) error {
-	args := m.Called(trackURL, name, progressCallback)
+func (m *MockDownloader) Download(trackURL, name string, downloadPath string, progressCallback func(int, string)) error {
+	args := m.Called(trackURL, name, downloadPath, progressCallback)
 
 	// Call the progress callback to simulate download progress
 	if progressCallback != nil {
