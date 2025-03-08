@@ -2,6 +2,7 @@ package djset
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -533,6 +534,564 @@ func TestSplitTracks(t *testing.T) {
 	assert.Equal(t, 100, progressUpdates[len(progressUpdates)-1]) // Last update should be 100%
 
 	// Verify mocks were called correctly
+	storage.AssertExpectations(t)
+	audioProcessor.AssertExpectations(t)
+}
+
+func TestNewProcessingContext(t *testing.T) {
+	// Test creating a new processing context
+	opts := &ProcessingOptions{
+		TracklistPath:      "test.txt",
+		DJSetURL:           "http://example.com/set",
+		FileExtension:      "mp3",
+		MaxConcurrentTasks: 4,
+	}
+
+	progressCalls := 0
+	progressCallback := func(progress int, message string) {
+		progressCalls++
+	}
+
+	ctx := newProcessingContext(opts, progressCallback)
+
+	// Verify the context is initialized correctly
+	assert.Equal(t, opts, ctx.opts)
+	assert.NotNil(t, ctx.progressCallback)
+	assert.Equal(t, 0, ctx.setLength)
+	assert.Equal(t, "", ctx.fileName)
+	assert.Equal(t, "", ctx.downloadedFile)
+	assert.Equal(t, "", ctx.actualExtension)
+	assert.Equal(t, "", ctx.coverArtPath)
+
+	// Test the callback works
+	ctx.progressCallback(10, "test")
+	assert.Equal(t, 1, progressCalls)
+}
+
+func TestProcessTracksFunction(t *testing.T) {
+	// Setup
+	audioProcessor := new(MockAudioProcessor)
+	storage := new(MockStorage)
+	p := &processor{
+		audioProcessor: audioProcessor,
+		storage:        storage,
+	}
+
+	// Test data
+	set := &domain.Tracklist{
+		Name:   "Test Set",
+		Artist: "Test Artist",
+		Tracks: []*domain.Track{
+			{Title: "Track 1", Artist: "Artist 1", TrackNumber: 1, StartTime: "00:00", EndTime: "01:00"},
+		},
+	}
+
+	opts := &ProcessingOptions{
+		FileExtension: "mp3",
+	}
+
+	// Test case: Successful processing
+	t.Run("Successful processing", func(t *testing.T) {
+		// Create a context with all necessary fields
+		ctx := newProcessingContext(opts, func(int, string) {})
+		ctx.set = set
+		ctx.setLength = len(set.Tracks)
+		ctx.fileName = "/tmp/downloads/Test Set.mp3"
+		ctx.actualExtension = "mp3"
+		ctx.coverArtPath = "/tmp/cover.jpg"
+
+		// Mock for splitTracks
+		// This requires mocking the audio processor and storage, similar to TestSplitTracks
+		storage.On("SaveTrack", mock.Anything, mock.Anything, mock.Anything).Return("/tmp/output/track", nil)
+		audioProcessor.On("Split", mock.AnythingOfType("audio.SplitParams")).Return(nil)
+
+		// Call the function
+		results, err := p.processTracks(ctx)
+
+		// Verify
+		assert.NoError(t, err)
+		assert.NotNil(t, results)
+
+		storage.AssertExpectations(t)
+		audioProcessor.AssertExpectations(t)
+	})
+}
+
+func TestImportTracklist(t *testing.T) {
+	// Setup
+	tracklistImporter := new(MockTracklistImporter)
+	p := &processor{
+		tracklistImporter: tracklistImporter,
+	}
+
+	// Create test data
+	opts := &ProcessingOptions{
+		TracklistPath: "test.txt",
+	}
+
+	set := &domain.Tracklist{
+		Name:   "Test Set",
+		Artist: "Test Artist",
+		Tracks: []*domain.Track{
+			{Title: "Track 1", Artist: "Artist 1", TrackNumber: 1},
+			{Title: "Track 2", Artist: "Artist 2", TrackNumber: 2},
+		},
+	}
+
+	// Regular test case - successful import
+	t.Run("Successful import", func(t *testing.T) {
+		ctx := newProcessingContext(opts, func(int, string) {})
+
+		// Mock importer to return a test set
+		tracklistImporter.On("Import", "test.txt").Return(set, nil).Once()
+
+		// Call the function
+		err := p.importTracklist(ctx)
+
+		// Verify
+		assert.NoError(t, err)
+		assert.Equal(t, set, ctx.set)
+		assert.Equal(t, 2, ctx.setLength)
+
+		tracklistImporter.AssertExpectations(t)
+	})
+
+	// Error case - import fails
+	t.Run("Import fails", func(t *testing.T) {
+		ctx := newProcessingContext(opts, func(int, string) {})
+
+		// Mock importer to return an error
+		expectedErr := fmt.Errorf("import failed")
+		tracklistImporter.On("Import", "test.txt").Return(nil, expectedErr).Once()
+
+		// Call the function
+		err := p.importTracklist(ctx)
+
+		// Verify
+		assert.Error(t, err)
+		assert.Equal(t, expectedErr, err)
+
+		tracklistImporter.AssertExpectations(t)
+	})
+}
+
+func TestDownloadSet(t *testing.T) {
+	// Setup
+	downloader := new(MockDownloader)
+	storage := new(MockStorage)
+	p := &processor{
+		setDownloader: downloader,
+		storage:       storage,
+	}
+
+	// Test data
+	set := &domain.Tracklist{
+		Name:   "Test Set",
+		Artist: "Test Artist",
+	}
+
+	// Mock for getDownloadPath
+	// This should match the actual implementation which calls filepath.Dir on the returned path
+	storage.On("SaveDownloadedSet", "temp", "tmp").Return("/tmp/temp.tmp", nil)
+
+	// Test cases
+
+	// Case 1: URL is already provided
+	t.Run("URL is provided", func(t *testing.T) {
+		opts := &ProcessingOptions{
+			DJSetURL: "http://example.com/set",
+		}
+		ctx := newProcessingContext(opts, func(int, string) {})
+		ctx.set = set
+
+		// Mock downloader with the exact path that will be passed
+		downloader.On("Download", "http://example.com/set", "Test Set", "/tmp", mock.AnythingOfType("func(int, string)")).
+			Run(func(args mock.Arguments) {
+				// Call the progress callback to simulate progress
+				callback := args.Get(3).(func(int, string))
+				callback(50, "Downloading set...")
+			}).
+			Return(nil).Once()
+
+		// Call the function
+		err := p.downloadSet(ctx)
+
+		// Verify
+		assert.NoError(t, err)
+		downloader.AssertExpectations(t)
+	})
+
+	// Case 2: URL needs to be found from tracklist path
+	t.Run("URL from tracklist path", func(t *testing.T) {
+		// Create fresh mocks for this test case
+		newDownloader := new(MockDownloader)
+		newStorage := new(MockStorage)
+		p2 := &processor{
+			setDownloader: newDownloader,
+			storage:       newStorage,
+		}
+
+		opts := &ProcessingOptions{
+			TracklistPath: "http://example.com/tracklist",
+		}
+		ctx := newProcessingContext(opts, func(int, string) {})
+		ctx.set = set
+
+		// Mock the download path again
+		newStorage.On("SaveDownloadedSet", "temp", "tmp").Return("/tmp/temp.tmp", nil).Once()
+
+		// Mock URL finder
+		newDownloader.On("FindURL", "http://example.com/tracklist").Return("http://example.com/found-set", nil).Once()
+
+		// Mock downloader
+		newDownloader.On("Download", "http://example.com/found-set", "Test Set", "/tmp", mock.AnythingOfType("func(int, string)")).
+			Return(nil).Once()
+
+		// Call the function
+		err := p2.downloadSet(ctx)
+
+		// Verify
+		assert.NoError(t, err)
+		newDownloader.AssertExpectations(t)
+		newStorage.AssertExpectations(t)
+	})
+
+	// Case 3: URL needs to be found from artist and name
+	t.Run("URL from artist and name", func(t *testing.T) {
+		// Create fresh mocks for this test case
+		newDownloader := new(MockDownloader)
+		newStorage := new(MockStorage)
+		p2 := &processor{
+			setDownloader: newDownloader,
+			storage:       newStorage,
+		}
+
+		opts := &ProcessingOptions{
+			TracklistPath: "local-file.txt",
+		}
+		ctx := newProcessingContext(opts, func(int, string) {})
+		ctx.set = set
+
+		// Mock the download path again
+		newStorage.On("SaveDownloadedSet", "temp", "tmp").Return("/tmp/temp.tmp", nil).Once()
+
+		// Mock URL finder
+		newDownloader.On("FindURL", "Test Artist Test Set").Return("http://example.com/found-set", nil).Once()
+
+		// Mock downloader
+		newDownloader.On("Download", "http://example.com/found-set", "Test Set", "/tmp", mock.AnythingOfType("func(int, string)")).
+			Return(nil).Once()
+
+		// Call the function
+		err := p2.downloadSet(ctx)
+
+		// Verify
+		assert.NoError(t, err)
+		newDownloader.AssertExpectations(t)
+		newStorage.AssertExpectations(t)
+	})
+
+	// Create fresh mocks for the remaining test cases to avoid conflicts
+	errorDownloader := new(MockDownloader)
+	errorStorage := new(MockStorage)
+	pError := &processor{
+		setDownloader: errorDownloader,
+		storage:       errorStorage,
+	}
+
+	// Case 4: FindURL fails
+	t.Run("FindURL fails", func(t *testing.T) {
+		opts := &ProcessingOptions{}
+		ctx := newProcessingContext(opts, func(int, string) {})
+		ctx.set = set
+
+		// Mock URL finder to return an error
+		expectedErr := fmt.Errorf("URL not found")
+		errorDownloader.On("FindURL", "Test Artist Test Set").Return("", expectedErr).Once()
+
+		// Call the function
+		err := pError.downloadSet(ctx)
+
+		// Verify
+		assert.Error(t, err)
+		assert.Equal(t, expectedErr, err)
+		errorDownloader.AssertExpectations(t)
+	})
+
+	// Case 5: Download fails
+	t.Run("Download fails", func(t *testing.T) {
+		// Create a new processor and mocks for this test
+		dlDownloader := new(MockDownloader)
+		dlStorage := new(MockStorage)
+		dlProc := &processor{
+			setDownloader: dlDownloader,
+			storage:       dlStorage,
+		}
+
+		opts := &ProcessingOptions{
+			DJSetURL: "http://example.com/set",
+		}
+		ctx := newProcessingContext(opts, func(int, string) {})
+		ctx.set = set
+
+		// Mock the download path
+		dlStorage.On("SaveDownloadedSet", "temp", "tmp").Return("/tmp/temp.tmp", nil).Once()
+
+		// Mock downloader to return an error
+		expectedErr := fmt.Errorf("download failed")
+		dlDownloader.On("Download", "http://example.com/set", "Test Set", "/tmp", mock.AnythingOfType("func(int, string)")).
+			Return(expectedErr).Once()
+
+		// Call the function
+		err := dlProc.downloadSet(ctx)
+
+		// Verify
+		assert.Error(t, err)
+		assert.Equal(t, expectedErr, err)
+		dlDownloader.AssertExpectations(t)
+		dlStorage.AssertExpectations(t)
+	})
+
+	// Case 6: getDownloadPath fails
+	t.Run("getDownloadPath fails", func(t *testing.T) {
+		// Create a new processor and mocks for this test
+		pathStorage := new(MockStorage)
+		pathProc := &processor{
+			storage: pathStorage,
+		}
+
+		opts := &ProcessingOptions{
+			DJSetURL: "http://example.com/set",
+		}
+		ctx := newProcessingContext(opts, func(int, string) {})
+		ctx.set = set
+
+		// Mock SaveDownloadedSet to return an error
+		expectedErr := fmt.Errorf("storage error")
+		pathStorage.On("SaveDownloadedSet", "temp", "tmp").Return("", expectedErr).Once()
+
+		// Call the function
+		err := pathProc.downloadSet(ctx)
+
+		// Verify
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to get download path")
+		pathStorage.AssertExpectations(t)
+	})
+}
+
+func TestPrepareForProcessing(t *testing.T) {
+	// Test data
+	set := &domain.Tracklist{
+		Name:   "Test Set",
+		Artist: "Test Artist",
+	}
+
+	opts := &ProcessingOptions{
+		FileExtension: "mp3",
+	}
+
+	// Test case: Successful preparation
+	t.Run("Successful preparation", func(t *testing.T) {
+		// Create fresh mocks for this test case
+		storage := new(MockStorage)
+		audioProcessor := new(MockAudioProcessor)
+		p := &processor{
+			storage:        storage,
+			audioProcessor: audioProcessor,
+		}
+
+		ctx := newProcessingContext(opts, func(int, string) {})
+		ctx.set = set
+
+		// Mock storage functions
+		storage.On("ListFiles", "", "Test Set").Return([]string{"/tmp/downloads/Test Set.mp3"}, nil)
+		storage.On("GetSetPath", "Test Set", "mp3").Return("/tmp/downloads/Test Set.mp3")
+		storage.On("GetCoverArtPath").Return("/tmp/cover.jpg")
+		storage.On("FileExists", "/tmp/downloads/Test Set.mp3").Return(true)
+		storage.On("CreateSetOutputDir", "Test Set").Return(nil)
+
+		// Mock audio processor
+		audioProcessor.On("ExtractCoverArt", "/tmp/downloads/Test Set.mp3", "/tmp/cover.jpg").Return(nil)
+
+		// Mock cleanup
+		storage.On("Cleanup").Return(nil)
+
+		// Call the function
+		err := p.prepareForProcessing(ctx)
+
+		// Verify
+		assert.NoError(t, err)
+		assert.Equal(t, "Test Set.mp3", ctx.downloadedFile)
+		assert.Equal(t, "mp3", ctx.actualExtension)
+		assert.Equal(t, "/tmp/downloads/Test Set.mp3", ctx.fileName)
+		assert.Equal(t, "/tmp/cover.jpg", ctx.coverArtPath)
+
+		storage.AssertExpectations(t)
+		audioProcessor.AssertExpectations(t)
+	})
+}
+
+// Test for error cases in ListFiles
+func TestPrepareForProcessingListFilesError(t *testing.T) {
+	set := &domain.Tracklist{
+		Name:   "Test Set",
+		Artist: "Test Artist",
+	}
+
+	opts := &ProcessingOptions{
+		FileExtension: "mp3",
+	}
+
+	storage := new(MockStorage)
+	audioProcessor := new(MockAudioProcessor)
+	p := &processor{
+		storage:        storage,
+		audioProcessor: audioProcessor,
+	}
+
+	ctx := newProcessingContext(opts, func(int, string) {})
+	ctx.set = set
+
+	// Mock storage to return an error for ListFiles
+	expectedErr := fmt.Errorf("list files error")
+	storage.On("ListFiles", "", "Test Set").Return([]string{}, expectedErr)
+
+	// Call the function
+	err := p.prepareForProcessing(ctx)
+
+	// Verify
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "error listing files")
+
+	storage.AssertExpectations(t)
+}
+
+func TestGetDownloadPath(t *testing.T) {
+	// Setup
+	storage := new(MockStorage)
+	p := &processor{
+		storage: storage,
+	}
+
+	// Test case 1: Successful retrieval
+	t.Run("Successful retrieval", func(t *testing.T) {
+		storage.On("SaveDownloadedSet", "temp", "tmp").Return("/tmp/temp.tmp", nil).Once()
+
+		path, err := p.getDownloadPath()
+
+		assert.NoError(t, err)
+		assert.Equal(t, "/tmp", path)
+
+		storage.AssertExpectations(t)
+	})
+
+	// Test case 2: Error from storage
+	t.Run("Error from storage", func(t *testing.T) {
+		expectedErr := fmt.Errorf("storage error")
+		storage.On("SaveDownloadedSet", "temp", "tmp").Return("", expectedErr).Once()
+
+		path, err := p.getDownloadPath()
+
+		assert.Error(t, err)
+		assert.Equal(t, "", path)
+		assert.Equal(t, expectedErr, err)
+
+		storage.AssertExpectations(t)
+	})
+}
+
+func TestProcessTracks(t *testing.T) {
+	// Setup mocked processor and dependencies
+	tracklistImporter := new(MockTracklistImporter)
+	downloader := new(MockDownloader)
+	audioProcessor := new(MockAudioProcessor)
+	storage := new(MockStorage)
+
+	p := &processor{
+		tracklistImporter: tracklistImporter,
+		setDownloader:     downloader,
+		audioProcessor:    audioProcessor,
+		storage:           storage,
+	}
+
+	// Create test data
+	opts := &ProcessingOptions{
+		TracklistPath:      "test.txt", // Use TracklistPath so we don't need FindURL
+		DJSetURL:           "",
+		FileExtension:      "mp3",
+		MaxConcurrentTasks: 2,
+	}
+
+	set := &domain.Tracklist{
+		Name:   "Test Set",
+		Artist: "Test Artist",
+		Tracks: []*domain.Track{
+			{Title: "Track 1", Artist: "Artist 1", TrackNumber: 1, StartTime: "00:00", EndTime: "01:00"},
+			{Title: "Track 2", Artist: "Artist 2", TrackNumber: 2, StartTime: "01:00", EndTime: "02:00"},
+		},
+	}
+
+	// Setup mocks for successful execution
+	tracklistImporter.On("Import", "test.txt").Return(set, nil)
+
+	// Mock the getDownloadPath to return a valid path
+	// The path returned here will be passed to filepath.Dir() in the code
+	storage.On("SaveDownloadedSet", "temp", "tmp").Return("/tmp/downloads/temp.tmp", nil)
+
+	// The code will construct a search query from the artist and name
+	// Since TracklistPath is not a URL, it will use "Test Artist Test Set"
+	downloader.On("FindURL", "Test Artist Test Set").Return("http://example.com/set", nil)
+
+	// Mock downloader functions - note that filepath.Dir("/tmp/downloads/temp.tmp") is "/tmp/downloads"
+	downloader.On("Download",
+		"http://example.com/set",
+		"Test Set",
+		"/tmp/downloads",
+		mock.AnythingOfType("func(int, string)")).
+		Run(func(args mock.Arguments) {
+			// Call the progress callback to simulate progress
+			callback := args.Get(3).(func(int, string))
+			callback(50, "Downloading set...")
+			callback(100, "Download complete")
+		}).
+		Return(nil)
+
+	// Mock storage functions for file operations
+	storage.On("ListFiles", "", "Test Set").Return([]string{"/tmp/downloads/Test Set.mp3"}, nil)
+	storage.On("GetSetPath", "Test Set", "mp3").Return("/tmp/downloads/Test Set.mp3")
+	storage.On("GetCoverArtPath").Return("/tmp/cover.jpg")
+	storage.On("FileExists", "/tmp/downloads/Test Set.mp3").Return(true)
+	storage.On("CreateSetOutputDir", "Test Set").Return(nil)
+	storage.On("Cleanup").Return(nil)
+	storage.On("SaveTrack", mock.Anything, mock.Anything, mock.Anything).Return("/tmp/output/track", nil)
+
+	// Mock audio processor functions
+	audioProcessor.On("ExtractCoverArt", "/tmp/downloads/Test Set.mp3", "/tmp/cover.jpg").Return(nil)
+	audioProcessor.On("Split", mock.AnythingOfType("audio.SplitParams")).Return(nil)
+
+	// Track progress updates
+	progressUpdates := []int{}
+	messageUpdates := []string{}
+	progressCallback := func(progress int, message string) {
+		progressUpdates = append(progressUpdates, progress)
+		messageUpdates = append(messageUpdates, message)
+	}
+
+	// Call the function
+	results, err := p.ProcessTracks(opts, progressCallback)
+
+	// Verify results
+	assert.NoError(t, err)
+	assert.NotNil(t, results)
+
+	// Verify progress reporting
+	assert.Greater(t, len(progressUpdates), 0)
+	assert.Greater(t, len(messageUpdates), 0)
+
+	// Verify that all expected mocks were called
+	tracklistImporter.AssertExpectations(t)
+	downloader.AssertExpectations(t)
 	storage.AssertExpectations(t)
 	audioProcessor.AssertExpectations(t)
 }
