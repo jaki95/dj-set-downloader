@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 type ffmpeg struct{}
@@ -113,6 +114,31 @@ func (f *ffmpeg) extractAudio(inputPath string, startSeconds, duration float64, 
 		"duration", fmt.Sprintf("%.3f", duration),
 	)
 
+	// Get the file extension from the output path
+	ext := filepath.Ext(outputPath)
+	if ext != "" {
+		ext = ext[1:] // Remove the leading dot
+	}
+
+	// Determine appropriate codec and format based on extension
+	outputCodec := "aac"
+	outputFormat := "m4a"
+
+	switch strings.ToLower(ext) {
+	case "mp3":
+		outputCodec = "libmp3lame"
+		outputFormat = "mp3"
+	case "m4a":
+		outputCodec = "aac"
+		outputFormat = "m4a"
+	case "wav":
+		outputCodec = "pcm_s16le"
+		outputFormat = "wav"
+	case "flac":
+		outputCodec = "flac"
+		outputFormat = "flac"
+	}
+
 	args := []string{
 		"-y", "-i", inputPath,
 		"-ss", fmt.Sprintf("%.3f", startSeconds),
@@ -124,7 +150,8 @@ func (f *ffmpeg) extractAudio(inputPath string, startSeconds, duration float64, 
 
 	args = append(args,
 		"-map", "0:a",
-		"-c:a", "aac",
+		"-c:a", outputCodec,
+		"-f", outputFormat,
 		"-b:a", "128k",
 		"-af", "aresample=async=1",
 		"-movflags", "+faststart",
@@ -152,6 +179,25 @@ func (f *ffmpeg) addMetadataAndCover(inputPath, outputPath string, opts SplitPar
 		"track", opts.Track.Title,
 	)
 
+	// Get the file extension from the output path
+	ext := filepath.Ext(outputPath)
+	if ext != "" {
+		ext = ext[1:] // Remove the leading dot
+	}
+
+	// Determine appropriate format based on extension
+	outputFormat := "m4a"
+	switch strings.ToLower(ext) {
+	case "mp3":
+		outputFormat = "mp3"
+	case "m4a":
+		outputFormat = "m4a"
+	case "wav":
+		outputFormat = "wav"
+	case "flac":
+		outputFormat = "flac"
+	}
+
 	args := []string{
 		"-y",
 		"-i", inputPath,
@@ -160,6 +206,7 @@ func (f *ffmpeg) addMetadataAndCover(inputPath, outputPath string, opts SplitPar
 		"-map", "1:v",
 		"-c:a", "copy",
 		"-c:v", "mjpeg",
+		"-f", outputFormat,
 		"-disposition:v:0", "attached_pic",
 		"-movflags", "+faststart",
 		"-id3v2_version", "3",
