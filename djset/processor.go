@@ -74,7 +74,6 @@ type ProcessingOptions struct {
 	DJSetURL           string
 	FileExtension      string
 	MaxConcurrentTasks int
-	SearchQuery        string
 }
 
 func (p *processor) ProcessTracks(
@@ -90,8 +89,17 @@ func (p *processor) ProcessTracks(
 
 	url := opts.DJSetURL
 	if url == "" {
-		// Try to find the URL using the user's search query
-		input := opts.TracklistPath
+		// Try to find the URL using the user's search query if available, otherwise use metadata
+		var input string
+		if !strings.Contains(opts.TracklistPath, "https://") {
+			// Use the user's search query
+			input = opts.TracklistPath
+			slog.Debug("using user-provided search query", "query", input)
+		} else {
+			// Fall back to constructing query from tracklist metadata
+			input = fmt.Sprintf("%s %s", set.Artist, set.Name)
+			slog.Debug("using tracklist metadata for search", "artist", set.Artist, "name", set.Name)
+		}
 
 		progressCallback(10, "Searching for set...")
 		input = strings.TrimSpace(input)
