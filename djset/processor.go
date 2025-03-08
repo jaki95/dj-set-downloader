@@ -85,6 +85,8 @@ func (p *processor) ProcessTracks(
 		return nil, err
 	}
 
+	progressCallback(10, "Got tracklist")
+
 	setLength := len(set.Tracks)
 
 	url := opts.DJSetURL
@@ -101,7 +103,6 @@ func (p *processor) ProcessTracks(
 			slog.Debug("using tracklist metadata for search", "artist", set.Artist, "name", set.Name)
 		}
 
-		progressCallback(10, "Searching for set...")
 		input = strings.TrimSpace(input)
 		url, err = p.setDownloader.FindURL(input)
 		if err != nil {
@@ -120,7 +121,7 @@ func (p *processor) ProcessTracks(
 
 	err = p.setDownloader.Download(url, set.Name, downloadPath, func(progress int, message string) {
 		totalProgress := progress / 2 // Scale to 0-50%
-		progressCallback(totalProgress, message)
+		progressCallback(10-totalProgress, message)
 	})
 	if err != nil {
 		return nil, err
