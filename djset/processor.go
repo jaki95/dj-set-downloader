@@ -74,6 +74,7 @@ type ProcessingOptions struct {
 	DJSetURL           string
 	FileExtension      string
 	MaxConcurrentTasks int
+	SearchQuery        string
 }
 
 func (p *processor) ProcessTracks(
@@ -89,8 +90,9 @@ func (p *processor) ProcessTracks(
 
 	url := opts.DJSetURL
 	if url == "" {
-		// Try to find the URL using the set name
-		input := fmt.Sprintf("%s %s", set.Artist, set.Name)
+		// Try to find the URL using the user's search query
+		input := opts.TracklistPath
+
 		progressCallback(10, "Searching for set...")
 		input = strings.TrimSpace(input)
 		url, err = p.setDownloader.FindURL(input)
