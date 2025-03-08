@@ -113,6 +113,8 @@ func (p *processor) ProcessTracks(
 		return nil, fmt.Errorf("failed to get download path: %w", err)
 	}
 
+	slog.Debug("downloading set", "url", url, "downloadPath", downloadPath)
+
 	err = p.setDownloader.Download(url, set.Name, downloadPath, func(progress int, message string) {
 		totalProgress := progress / 2 // Scale to 0-50%
 		progressCallback(totalProgress, message)
@@ -127,6 +129,8 @@ func (p *processor) ProcessTracks(
 	if err != nil {
 		return nil, fmt.Errorf("error listing files: %w", err)
 	}
+
+	slog.Debug("found files", "files", files)
 
 	var downloadedFile string
 	var actualExtension string
@@ -144,20 +148,6 @@ func (p *processor) ProcessTracks(
 			}
 			break
 		}
-	}
-
-	if downloadedFile == "" {
-		slog.Warn("could not find downloaded file, using configured extension", "extension", opts.FileExtension)
-		downloadedFile = fmt.Sprintf("%s.%s", set.Name, opts.FileExtension)
-		actualExtension = opts.FileExtension
-	} else {
-		slog.Debug("found downloaded file", "file", downloadedFile, "extension", actualExtension)
-	}
-
-	// Make sure we have a non-empty extension
-	if actualExtension == "" {
-		slog.Warn("empty file extension detected, falling back to configured extension", "extension", opts.FileExtension)
-		actualExtension = opts.FileExtension
 	}
 
 	// Get the file path from storage
@@ -185,7 +175,7 @@ func (p *processor) ProcessTracks(
 			for i, match := range matchingFiles {
 				errorMsg += fmt.Sprintf("  %d. %s\n", i+1, match)
 			}
-			return nil, fmt.Errorf(errorMsg)
+			return nil, fmt.Errorf("%s", errorMsg)
 		}
 
 		return nil, fmt.Errorf("audio file not found: %s (make sure file exists in the download directory)", fileName)
