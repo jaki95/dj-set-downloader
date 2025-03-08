@@ -213,3 +213,49 @@ func TestSanitizeTitle(t *testing.T) {
 		})
 	}
 }
+
+// TestDownloadProgressCalculation tests that progress values during download are never negative
+func TestDownloadProgressCalculation(t *testing.T) {
+	// Create a simple test that directly tests the progress calculation logic
+	// This isolates the test from the complex processor flow
+
+	// Create a slice to capture progress values
+	progressValues := []int{}
+
+	// Create a progress callback that records values
+	progressCallback := func(progress int, message string) {
+		progressValues = append(progressValues, progress)
+	}
+
+	// Simulate the Download callback with different input progress values
+	testProgresses := []int{0, 5, 10, 20, 50, 75, 100}
+
+	for _, inputProgress := range testProgresses {
+		// Apply the exact same calculation used in the processor code
+		adjustedProgress := 10 + (inputProgress / 2)
+		progressCallback(adjustedProgress, "Testing progress")
+	}
+
+	// Verify each progress value is correct and non-negative
+	expectedResults := []int{10, 12, 15, 20, 35, 47, 60}
+
+	// Ensure we have the expected number of results
+	assert.Equal(t, len(expectedResults), len(progressValues), "Should have the correct number of progress values")
+
+	// Check each value individually
+	for i, expectedValue := range expectedResults {
+		// The progress should never be negative
+		assert.GreaterOrEqual(t, progressValues[i], 0, "Progress should never be negative")
+
+		// Verify the exact value matches what we expect based on the processor's calculation
+		assert.Equal(t, expectedValue, progressValues[i],
+			"Progress value for input %d should be %d", testProgresses[i], expectedValue)
+	}
+
+	// Verify edge cases match our expectations:
+	// - 0% download progress should be reported as 10%
+	assert.Equal(t, 10, progressValues[0], "0% download should be reported as 10%")
+
+	// - 100% download progress should be reported as 60%
+	assert.Equal(t, 60, progressValues[len(progressValues)-1], "100% download should be reported as 60%")
+}

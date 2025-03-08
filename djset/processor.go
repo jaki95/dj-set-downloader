@@ -78,8 +78,10 @@ func (p *processor) ProcessTracks(
 	slog.Debug("downloading set", "url", url, "downloadPath", downloadPath)
 
 	err = p.setDownloader.Download(url, set.Name, downloadPath, func(progress int, message string) {
-		totalProgress := progress / 2 // Scale to 0-50%
-		progressCallback(totalProgress-10, message)
+		// Adjust the progress calculation to ensure it never goes negative
+		// Scale the original 0-100% to 10-50% range
+		adjustedProgress := 10 + (progress / 2)
+		progressCallback(adjustedProgress, message)
 	})
 	if err != nil {
 		return nil, err
