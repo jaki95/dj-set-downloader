@@ -44,11 +44,16 @@ func New(cfg *config.Config) (*processor, error) {
 
 	// Create the audio processor
 	var audioProcessor audio.Processor
-	switch cfg.AudioProcessor {
+	processorType := cfg.AudioProcessor
+	if processorType == "" {
+		processorType = "ffmpeg" // Default to ffmpeg if not specified
+	}
+
+	switch processorType {
 	case "ffmpeg":
 		audioProcessor = audio.NewFFMPEGEngine()
 	default:
-		return nil, fmt.Errorf("unsupported audio processor: %s", cfg.AudioProcessor)
+		return nil, fmt.Errorf("unsupported audio processor: %s", processorType)
 	}
 
 	// Create the storage

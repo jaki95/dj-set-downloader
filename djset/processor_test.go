@@ -157,6 +157,13 @@ func TestNew(t *testing.T) {
 		AudioSource:     "soundcloud",
 		TracklistSource: "trackids",
 		FileExtension:   "m4a",
+		AudioProcessor:  "ffmpeg",
+		Storage: config.StorageConfig{
+			Type:      "local",
+			DataDir:   "data",
+			OutputDir: "output",
+			TempDir:   "temp",
+		},
 	}
 
 	// Test
