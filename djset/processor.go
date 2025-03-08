@@ -79,7 +79,7 @@ func (p *processor) ProcessTracks(
 
 	err = p.setDownloader.Download(url, set.Name, downloadPath, func(progress int, message string) {
 		totalProgress := progress / 2 // Scale to 0-50%
-		progressCallback(10-totalProgress, message)
+		progressCallback(totalProgress-10, message)
 	})
 	if err != nil {
 		return nil, err
