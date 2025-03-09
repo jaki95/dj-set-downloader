@@ -639,8 +639,8 @@ func TestProcessTracks(t *testing.T) {
 	// Create context with minimal needed data
 	tempDir := filepath.Join(testDirs.rootDir, "process/temp")
 	outputDir := filepath.Join(testDirs.rootDir, "output/Test_Set")
-	os.MkdirAll(outputDir, 0755)
-
+	err := os.MkdirAll(outputDir, 0755)
+	require.NoError(t, err)
 	ctx := &processingContext{
 		set: &domain.Tracklist{
 			Name:   "Test Set",
