@@ -4,21 +4,14 @@ audio_source: soundcloud
 tracklist_source: trackids
 file_extension: m4a
 
-# Storage configuration
 storage:
   # Storage type: "local" or "gcs"
-  type: local
+  type: gcs
   
-  # Local storage options
-  data_dir: data
-  output_dir: output
-  temp_dir: temp
+  # Local storage options (used when type is "local")
+  data_dir: data      
+  output_dir: data 
   
-  # GCS storage options (only used when type is "gcs")
-  # bucket_name: your-bucket-name
-  # object_prefix: dj-sets
-  # credentials_file: path/to/credentials.json
-  # public_base_url: https://storage.googleapis.com/your-bucket-name
-  
-  # Note: when using GCS, temp_dir is still required for local temporary file storage
-  # Make sure temp_dir is writable when using GCS storage
+  # GCS storage options (used when type is "gcs")
+  bucket_name: dj-set-files
+  object_prefix: dj-set/

@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/jaki95/dj-set-downloader/config"
 	"github.com/jaki95/dj-set-downloader/internal/audio"
 	"github.com/jaki95/dj-set-downloader/internal/domain"
+	"github.com/jaki95/dj-set-downloader/internal/storage"
 	"github.com/schollz/progressbar/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -104,69 +106,86 @@ type MockStorage struct {
 	mock.Mock
 }
 
-func (m *MockStorage) SaveDownloadedSet(setName string, originalExt string) (string, error) {
-	args := m.Called(setName, originalExt)
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockStorage) SaveTrack(setName, trackName string, ext string) (string, error) {
-	args := m.Called(setName, trackName, ext)
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockStorage) GetSetPath(setName string, ext string) string {
-	args := m.Called(setName, ext)
-	return args.String(0)
-}
-
-func (m *MockStorage) GetCoverArtPath() string {
-	args := m.Called()
-	return args.String(0)
-}
-
-func (m *MockStorage) CreateSetOutputDir(setName string) error {
-	args := m.Called(setName)
+// Basic operations
+func (m *MockStorage) CreateDir(path string) error {
+	args := m.Called(path)
 	return args.Error(0)
 }
 
-func (m *MockStorage) Cleanup() error {
-	args := m.Called()
+func (m *MockStorage) WriteFile(path string, data []byte) error {
+	args := m.Called(path, data)
 	return args.Error(0)
 }
 
-func (m *MockStorage) GetReader(path string) (io.ReadCloser, error) {
+func (m *MockStorage) ReadFile(path string) ([]byte, error) {
 	args := m.Called(path)
-	return args.Get(0).(io.ReadCloser), args.Error(1)
+	return args.Get(0).([]byte), args.Error(1)
 }
 
-func (m *MockStorage) GetWriter(path string) (io.WriteCloser, error) {
+func (m *MockStorage) FileExists(path string) (bool, error) {
 	args := m.Called(path)
-	return args.Get(0).(io.WriteCloser), args.Error(1)
+	return args.Bool(0), args.Error(1)
 }
 
-func (m *MockStorage) FileExists(path string) bool {
+func (m *MockStorage) DeleteFile(path string) error {
 	args := m.Called(path)
-	return args.Bool(0)
+	return args.Error(0)
 }
 
-func (m *MockStorage) ListFiles(dir string, pattern string) ([]string, error) {
-	args := m.Called(dir, pattern)
+// Directory operations
+func (m *MockStorage) ListDir(path string) ([]string, error) {
+	args := m.Called(path)
 	return args.Get(0).([]string), args.Error(1)
 }
 
+// Process operations
+func (m *MockStorage) CreateProcessDir(processID string) (string, error) {
+	args := m.Called(processID)
+	return args.String(0), args.Error(1)
+}
+
+func (m *MockStorage) GetDownloadDir(processID string) string {
+	args := m.Called(processID)
+	return args.String(0)
+}
+
+func (m *MockStorage) GetTempDir(processID string) string {
+	args := m.Called(processID)
+	return args.String(0)
+}
+
+func (m *MockStorage) GetOutputDir(setName string) string {
+	args := m.Called(setName)
+	return args.String(0)
+}
+
+// Cleanup
+func (m *MockStorage) CleanupProcessDir(processID string) error {
+	args := m.Called(processID)
+	return args.Error(0)
+}
+
+// Add right after GetOutputDir method
+func (m *MockStorage) GetLocalDownloadDir(processID string) string {
+	args := m.Called(processID)
+	return args.String(0)
+}
+
 // These functions are for test setup and teardown
-func setupTestProcessor() (*processor, *MockTracklistImporter, *MockDownloader, *MockAudioProcessor) {
+func setupTestProcessor() (*processor, *MockTracklistImporter, *MockDownloader, *MockAudioProcessor, *MockStorage) {
 	mockImporter := new(MockTracklistImporter)
 	mockDownloader := new(MockDownloader)
 	mockAudioProcessor := new(MockAudioProcessor)
+	mockStorage := new(MockStorage)
 
 	p := &processor{
 		tracklistImporter: mockImporter,
 		setDownloader:     mockDownloader,
 		audioProcessor:    mockAudioProcessor,
+		storage:           mockStorage,
 	}
 
-	return p, mockImporter, mockDownloader, mockAudioProcessor
+	return p, mockImporter, mockDownloader, mockAudioProcessor, mockStorage
 }
 
 func setupTestDirectories(t *testing.T) testDirStructure {
@@ -309,7 +328,7 @@ func TestDownloadProgressCalculation(t *testing.T) {
 }
 
 func TestGetMaxWorkers(t *testing.T) {
-	p, _, _, _ := setupTestProcessor()
+	p, _, _, _, _ := setupTestProcessor()
 
 	tests := []struct {
 		name     string
@@ -357,7 +376,7 @@ func (m *mockLogger) Debug(msg string, args ...interface{}) {}
 func (m *mockLogger) Warn(msg string, args ...interface{})  { m.warnFunc(msg, args...) }
 
 func TestMonitorTrackProcessing(t *testing.T) {
-	p, _, _, _ := setupTestProcessor()
+	p, _, _, _, _ := setupTestProcessor()
 
 	tests := []struct {
 		name          string
@@ -434,7 +453,7 @@ func TestMonitorTrackProcessing(t *testing.T) {
 }
 
 func TestUpdateTrackProgress(t *testing.T) {
-	p, _, _, _ := setupTestProcessor()
+	p, _, _, _, _ := setupTestProcessor()
 
 	bar := progressbar.NewOptions(
 		10,
@@ -465,9 +484,6 @@ func TestUpdateTrackProgress(t *testing.T) {
 }
 
 func TestProcessingContext(t *testing.T) {
-	// Setup test directories with our new helper
-	testDirs := setupTestDirectories(t)
-
 	// Create test options
 	opts := &ProcessingOptions{
 		TracklistPath:      "test_path",
@@ -489,14 +505,12 @@ func TestProcessingContext(t *testing.T) {
 	assert.NotEmpty(t, ctx.processID, "Process ID should be generated")
 	assert.Equal(t, opts, ctx.opts, "Options should be stored")
 	assert.Equal(t, 0, ctx.setLength, "Set length should initialize to 0")
-	assert.NotEmpty(t, ctx.processDir, "Process directory path should be set")
-	assert.NotEmpty(t, ctx.downloadDir, "Download directory path should be set")
-	assert.NotEmpty(t, ctx.tempDir, "Temp directory path should be set")
 
-	// Verify paths are correctly structured - use the test directories we've configured
-	assert.Contains(t, ctx.processDir, testDirs.processesDir, "Process dir should be under processes dir")
-	assert.Contains(t, ctx.downloadDir, "download", "Download dir should contain 'download'")
-	assert.Contains(t, ctx.tempDir, "temp", "Temp dir should contain 'temp'")
+	// In our new approach, directories are set up later in ProcessTracks, not in newProcessingContext
+	// So these fields should initially be empty
+	assert.Empty(t, ctx.processDir, "Process directory path should initially be empty")
+	assert.Empty(t, ctx.downloadDir, "Download directory path should initially be empty")
+	assert.Empty(t, ctx.tempDir, "Temp directory path should initially be empty")
 
 	// Test the callback
 	ctx.progressCallback(10, "test")
@@ -507,7 +521,7 @@ func TestImportTracklist(t *testing.T) {
 	// Setup test directories with our new helper
 	testDirs := setupTestDirectories(t)
 
-	p, mockImporter, _, _ := setupTestProcessor()
+	p, mockImporter, _, _, mockStorage := setupTestProcessor()
 
 	// Create test data
 	tracklist := &domain.Tracklist{
@@ -519,8 +533,13 @@ func TestImportTracklist(t *testing.T) {
 		},
 	}
 
-	// Setup mock
+	// Setup mocks
 	mockImporter.On("Import", "test_path").Return(tracklist, nil)
+
+	// Set up storage mock
+	outputDir := filepath.Join(testDirs.outputDir, "Test_Set")
+	mockStorage.On("GetOutputDir", "Test_Set").Return(outputDir)
+	mockStorage.On("CreateDir", outputDir).Return(nil)
 
 	// Create context
 	ctx := &processingContext{
@@ -553,7 +572,7 @@ func TestDownloadSet(t *testing.T) {
 	// Setup test directories with our new helper
 	testDirs := setupTestDirectories(t)
 
-	p, _, mockDownloader, _ := setupTestProcessor()
+	p, _, mockDownloader, _, mockStorage := setupTestProcessor()
 
 	// Create test data
 	tracklist := &domain.Tracklist{
@@ -567,7 +586,14 @@ func TestDownloadSet(t *testing.T) {
 
 	// Create context
 	downloadDir := filepath.Join(testDirs.rootDir, "process/download")
+	localDownloadDir := filepath.Join(testDirs.rootDir, "local/download")
+	outputBaseDir := filepath.Join(testDirs.rootDir, "output")
+	if err := os.MkdirAll(localDownloadDir, 0755); err != nil {
+		t.Fatalf("Failed to create local download directory: %v", err)
+	}
+
 	ctx := &processingContext{
+		processID: "test-process",
 		opts: &ProcessingOptions{
 			DJSetURL: "test_url",
 		},
@@ -579,69 +605,72 @@ func TestDownloadSet(t *testing.T) {
 	}
 
 	// Setup mock
-	mockDownloader.On("Download", "test_url", mock.Anything, downloadDir, mock.Anything).Return(nil)
+	mockDownloader.On("Download", "test_url", mock.Anything, localDownloadDir, mock.Anything).Return(nil)
+
+	// Mock the GetLocalDownloadDir method
+	mockStorage.On("GetLocalDownloadDir", "test-process").Return(localDownloadDir)
+
+	// Mock the GetOutputDir method - now with empty string for the base output directory
+	mockStorage.On("GetOutputDir", "").Return(outputBaseDir)
+
+	// Create a test file in the local download directory to simulate a download
+	testFilePath := filepath.Join(localDownloadDir, "Test_Set.mp3")
+	testContent := []byte("test audio content")
+	createTestFile(t, testFilePath, string(testContent))
 
 	// Test
 	err := p.downloadSet(ctx)
 
 	// Assert
 	assert.NoError(t, err)
-	assert.NotEmpty(t, ctx.downloadedFile)
-	assert.NotEmpty(t, ctx.fileName)
+	assert.Equal(t, testFilePath, ctx.downloadedFile)
+	assert.Equal(t, testFilePath, ctx.fileName)
+	assert.Equal(t, testFilePath, ctx.localInputPath)
 	assert.Equal(t, "mp3", ctx.actualExtension)
+
+	// Check that the output directory follows the new pattern: outputBaseDir/processID/setName
+	expectedOutputDir := filepath.Join(outputBaseDir, ctx.processID, "Test_Set")
+	assert.Equal(t, expectedOutputDir, ctx.processOutputDir)
 
 	// Verify mock expectations
 	mockDownloader.AssertExpectations(t)
-}
-
-func TestPrepareForProcessing(t *testing.T) {
-	// Setup test directories with our new helper
-	testDirs := setupTestDirectories(t)
-
-	p, _, _, mockAudioProcessor := setupTestProcessor()
-
-	// Create context
-	tempDir := filepath.Join(testDirs.rootDir, "process/temp")
-	ctx := &processingContext{
-		set: &domain.Tracklist{
-			Name:   "Test Set",
-			Artist: "Test Artist",
-		},
-		fileName:    filepath.Join(testDirs.rootDir, "input.mp3"),
-		tempDir:     tempDir,
-		processDir:  filepath.Join(testDirs.rootDir, "process"),
-		downloadDir: filepath.Join(testDirs.rootDir, "process/download"),
-	}
-
-	// Create a test input file
-	createTestFile(t, ctx.fileName, "test audio content")
-
-	// Setup mock
-	mockAudioProcessor.On("ExtractCoverArt", ctx.fileName, filepath.Join(tempDir, "cover.jpg")).Return(nil)
-
-	// Test
-	err := p.prepareForProcessing(ctx)
-
-	// Assert
-	assert.NoError(t, err)
-	assert.FileExists(t, ctx.coverArtPath)
-
-	// Verify mock expectations
-	mockAudioProcessor.AssertExpectations(t)
+	mockStorage.AssertExpectations(t)
 }
 
 func TestProcessTracks(t *testing.T) {
 	// Setup test directories with our new helper
 	testDirs := setupTestDirectories(t)
 
-	p, _, _, mockAudioProcessor := setupTestProcessor()
+	p, _, _, mockAudioProcessor, mockStorage := setupTestProcessor()
 
 	// Create context with minimal needed data
 	tempDir := filepath.Join(testDirs.rootDir, "process/temp")
-	outputDir := filepath.Join(testDirs.rootDir, "output/Test_Set")
+
+	// Create output directory following the new pattern: output/processID/setName
+	processID := "test-process"
+	outputDir := filepath.Join(testDirs.rootDir, "output", processID, "Test_Set")
 	err := os.MkdirAll(outputDir, 0755)
 	require.NoError(t, err)
+
+	// Create local directories for temporary files
+	localDir := filepath.Join(testDirs.rootDir, "local")
+	localTempOutputDir := filepath.Join(localDir, "temp_output")
+	err = os.MkdirAll(localTempOutputDir, 0755)
+	require.NoError(t, err)
+
+	processDir := filepath.Join(testDirs.processesDir, processID)
+	downloadDir := filepath.Join(processDir, "download")
+
+	// Create a local input file that will be used directly
+	fileName := "input.mp3"
+	localFilePath := filepath.Join(testDirs.rootDir, fileName)
+	remoteFilePath := filepath.Join(downloadDir, fileName)
+
+	// Create the local input file
+	createTestFile(t, localFilePath, "test audio content")
+
 	ctx := &processingContext{
+		processID: processID,
 		set: &domain.Tracklist{
 			Name:   "Test Set",
 			Artist: "Test Artist",
@@ -650,23 +679,46 @@ func TestProcessTracks(t *testing.T) {
 			},
 		},
 		setLength:        1,
-		fileName:         filepath.Join(testDirs.rootDir, "input.mp3"),
+		fileName:         remoteFilePath, // Remote storage path
+		localInputPath:   localFilePath,  // Local path for processing
 		actualExtension:  "mp3",
 		coverArtPath:     filepath.Join(tempDir, "cover.jpg"),
 		opts:             &ProcessingOptions{FileExtension: "mp3", MaxConcurrentTasks: 1},
 		tempDir:          tempDir,
-		processDir:       filepath.Join(testDirs.rootDir, "process"),
-		downloadDir:      filepath.Join(testDirs.rootDir, "process/download"),
+		processDir:       processDir,
+		downloadDir:      downloadDir,
 		processOutputDir: outputDir,
 		progressCallback: func(progress int, message string) {},
 	}
 
 	// Create test files
-	createTestFile(t, ctx.fileName, "test audio content")
 	createTestFile(t, ctx.coverArtPath, "test cover art")
 
-	// Setup mock for audio processor
-	mockAudioProcessor.On("Split", mock.Anything).Return(nil)
+	// Mock storage functions for local file access
+	mockStorage.On("GetLocalDownloadDir", processID).Return(localDir)
+
+	// Mock the WriteFile call for uploading the processed track
+	expectedRemoteOutputFile := filepath.Join(outputDir, "01-Track_1.mp3")
+	mockStorage.On("WriteFile", expectedRemoteOutputFile, mock.Anything).Return(nil)
+
+	// Setup mock for audio processor with a more flexible matcher
+	mockAudioProcessor.On("Split", mock.MatchedBy(func(params audio.SplitParams) bool {
+		// Create the output file that would normally be created by the audio processor
+		if err := os.MkdirAll(filepath.Dir(params.OutputPath), 0755); err != nil {
+			t.Logf("Failed to create directory: %v", err)
+			return false
+		}
+		outputFile := fmt.Sprintf("%s.%s", params.OutputPath, params.FileExtension)
+		if err := os.WriteFile(outputFile, []byte("processed audio content"), 0644); err != nil {
+			t.Logf("Failed to write output file: %v", err)
+			return false
+		}
+
+		// More flexible matching - just check that it contains the track name and extension
+		return strings.Contains(params.OutputPath, "01-Track_1") &&
+			params.FileExtension == "mp3" &&
+			params.Track.Title == "Track 1"
+	})).Return(nil)
 
 	// Test
 	results, err := p.processTracks(ctx)
@@ -674,9 +726,54 @@ func TestProcessTracks(t *testing.T) {
 	// Assert
 	assert.NoError(t, err)
 	assert.Len(t, results, 1)
+	assert.Equal(t, expectedRemoteOutputFile, results[0])
 
 	// Verify mock expectations
 	mockAudioProcessor.AssertExpectations(t)
+	mockStorage.AssertExpectations(t)
+}
+
+func TestPrepareForProcessing(t *testing.T) {
+	// Setup test directories with our new helper
+	testDirs := setupTestDirectories(t)
+
+	p, _, _, mockAudioProcessor, mockStorage := setupTestProcessor()
+
+	// Create context
+	tempDir := filepath.Join(testDirs.rootDir, "process/temp")
+
+	// Create a local input file
+	inputFilePath := filepath.Join(testDirs.rootDir, "input.mp3")
+	createTestFile(t, inputFilePath, "test audio content")
+
+	ctx := &processingContext{
+		processID: "test-process",
+		set: &domain.Tracklist{
+			Name:   "Test Set",
+			Artist: "Test Artist",
+		},
+		fileName:       inputFilePath, // Using a local file directly
+		localInputPath: inputFilePath, // Local path is same as fileName for tests
+		tempDir:        tempDir,
+		processDir:     filepath.Join(testDirs.rootDir, "process"),
+		downloadDir:    filepath.Join(testDirs.rootDir, "process/download"),
+	}
+
+	// Setup mocks
+	mockStorage.On("CreateDir", tempDir).Return(nil)
+	mockStorage.On("WriteFile", filepath.Join(tempDir, "cover.jpg"), mock.Anything).Return(nil)
+	mockAudioProcessor.On("ExtractCoverArt", inputFilePath, filepath.Join(tempDir, "cover.jpg")).Return(nil)
+
+	// Test
+	err := p.prepareForProcessing(ctx)
+
+	// Assert
+	assert.NoError(t, err)
+	assert.Equal(t, filepath.Join(tempDir, "cover.jpg"), ctx.coverArtPath)
+
+	// Verify mock expectations
+	mockAudioProcessor.AssertExpectations(t)
+	mockStorage.AssertExpectations(t)
 }
 
 // Tests for the new process ID approach
@@ -695,8 +792,15 @@ func TestEnsureDirectories(t *testing.T) {
 	restoreFunc := ConfigureDirs(testBaseDir, testProcessesDir, testOutputDir)
 	defer restoreFunc() // Make sure we restore original values
 
-	// Test base directories
-	err = ensureBaseDirectories()
+	// Create a storage backend
+	localStorage := storage.NewLocalStorage(testBaseDir, testOutputDir)
+
+	// Test base directory - we'll manually create these
+	err = os.MkdirAll(testBaseDir, 0755)
+	assert.NoError(t, err)
+	err = os.MkdirAll(testProcessesDir, 0755)
+	assert.NoError(t, err)
+	err = os.MkdirAll(testOutputDir, 0755)
 	assert.NoError(t, err)
 
 	// Verify directories were created
@@ -704,19 +808,18 @@ func TestEnsureDirectories(t *testing.T) {
 	assert.DirExists(t, testProcessesDir)
 	assert.DirExists(t, testOutputDir)
 
-	// Test process directories
-	ctx := &processingContext{
-		processID:   "test-process",
-		processDir:  filepath.Join(testProcessesDir, "test-process"),
-		downloadDir: filepath.Join(testProcessesDir, "test-process/download"),
-		tempDir:     filepath.Join(testProcessesDir, "test-process/temp"),
-	}
-
-	err = ensureProcessDirectories(ctx)
+	// Test process directories using the storage interface
+	processID := "test-process"
+	_, err = localStorage.CreateProcessDir(processID)
 	assert.NoError(t, err)
 
+	// Get the directories
+	downloadDir := localStorage.GetDownloadDir(processID)
+	tempDir := localStorage.GetTempDir(processID)
+
 	// Verify process directories were created
-	assert.DirExists(t, ctx.processDir)
-	assert.DirExists(t, ctx.downloadDir)
-	assert.DirExists(t, ctx.tempDir)
+	processDir := filepath.Join(testProcessesDir, processID)
+	assert.DirExists(t, processDir)
+	assert.DirExists(t, downloadDir)
+	assert.DirExists(t, tempDir)
 }

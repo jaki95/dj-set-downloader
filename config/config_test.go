@@ -41,9 +41,18 @@ func TestLoadNonExistentFile(t *testing.T) {
 	// Test loading a non-existent config file
 	cfg, err := Load("non_existent_file.yaml")
 
-	// Assert
-	assert.Error(t, err)
-	assert.Nil(t, cfg)
+	// Assert that we get a default configuration without an error
+	assert.NoError(t, err)
+	assert.NotNil(t, cfg)
+
+	// Verify default values
+	assert.Equal(t, "soundcloud", cfg.AudioSource)
+	assert.Equal(t, "trackids", cfg.TracklistSource)
+	assert.Equal(t, "mp3", cfg.FileExtension)
+	assert.Equal(t, "ffmpeg", cfg.AudioProcessor)
+	assert.Equal(t, "local", cfg.Storage.Type)
+	assert.Equal(t, "storage", cfg.Storage.DataDir)
+	assert.Equal(t, "output", cfg.Storage.OutputDir)
 }
 
 func TestLoadInvalidYAML(t *testing.T) {
