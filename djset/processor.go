@@ -23,27 +23,27 @@ import (
 
 // Define base directories for local storage - these can be configured globally
 var (
-	BaseDir      = "storage"           // Base directory for all storage
-	ProcessesDir = "storage/processes" // Directory for process-specific storage
-	OutputDir    = "output"            // Directory for final output
+	BaseDir   = "storage"       // Base directory for all storage
+	LocalDir  = "storage/local" // Directory for process-specific storage (renamed from ProcessesDir)
+	OutputDir = "output"        // Directory for final output
 )
 
 // ConfigureDirs allows setting custom directory paths (useful for testing)
-func ConfigureDirs(baseDir, processesDir, outputDir string) (restoreFunc func()) {
+func ConfigureDirs(baseDir, localDir, outputDir string) (restoreFunc func()) {
 	// Save original values
 	origBaseDir := BaseDir
-	origProcessesDir := ProcessesDir
+	origLocalDir := LocalDir
 	origOutputDir := OutputDir
 
 	// Set new values
 	BaseDir = baseDir
-	ProcessesDir = processesDir
+	LocalDir = localDir
 	OutputDir = outputDir
 
 	// Return a function to restore the original values
 	return func() {
 		BaseDir = origBaseDir
-		ProcessesDir = origProcessesDir
+		LocalDir = origLocalDir
 		OutputDir = origOutputDir
 	}
 }

@@ -785,11 +785,11 @@ func TestEnsureDirectories(t *testing.T) {
 
 	// Configure the processor to use our test directories
 	testBaseDir := filepath.Join(testDir, "storage")
-	testProcessesDir := filepath.Join(testDir, "storage/processes")
+	testLocalDir := filepath.Join(testDir, "storage/local") // Updated to use local instead of processes
 	testOutputDir := filepath.Join(testDir, "output")
 
 	// Configure directories for this test
-	restoreFunc := ConfigureDirs(testBaseDir, testProcessesDir, testOutputDir)
+	restoreFunc := ConfigureDirs(testBaseDir, testLocalDir, testOutputDir)
 	defer restoreFunc() // Make sure we restore original values
 
 	// Create a storage backend
@@ -798,14 +798,14 @@ func TestEnsureDirectories(t *testing.T) {
 	// Test base directory - we'll manually create these
 	err = os.MkdirAll(testBaseDir, 0755)
 	assert.NoError(t, err)
-	err = os.MkdirAll(testProcessesDir, 0755)
+	err = os.MkdirAll(testLocalDir, 0755)
 	assert.NoError(t, err)
 	err = os.MkdirAll(testOutputDir, 0755)
 	assert.NoError(t, err)
 
 	// Verify directories were created
 	assert.DirExists(t, testBaseDir)
-	assert.DirExists(t, testProcessesDir)
+	assert.DirExists(t, testLocalDir)
 	assert.DirExists(t, testOutputDir)
 
 	// Test process directories using the storage interface
@@ -817,8 +817,8 @@ func TestEnsureDirectories(t *testing.T) {
 	downloadDir := localStorage.GetDownloadDir(processID)
 	tempDir := localStorage.GetTempDir(processID)
 
-	// Verify process directories were created
-	processDir := filepath.Join(testProcessesDir, processID)
+	// Verify process directories were created with the new structure
+	processDir := filepath.Join(testLocalDir, processID) // Updated path
 	assert.DirExists(t, processDir)
 	assert.DirExists(t, downloadDir)
 	assert.DirExists(t, tempDir)

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -15,6 +16,30 @@ type LocalStorage struct {
 
 // NewLocalStorage creates a new LocalStorage instance
 func NewLocalStorage(baseDir, outputDir string) *LocalStorage {
+	// Ensure baseDir is absolute or relative to current working directory
+	if !filepath.IsAbs(baseDir) {
+		// Get current working directory to use as base
+		cwd, err := os.Getwd()
+		if err == nil {
+			baseDir = filepath.Join(cwd, baseDir)
+		}
+	}
+
+	// Ensure the base directory exists
+	if err := os.MkdirAll(baseDir, 0755); err != nil {
+		// Log error but continue - will try to create directories on demand
+		fmt.Printf("Warning: Failed to create base directory %s: %v\n", baseDir, err)
+	}
+
+	// Ensure the output directory exists
+	fullOutputDir := outputDir
+	if !filepath.IsAbs(outputDir) {
+		fullOutputDir = filepath.Join(baseDir, outputDir)
+	}
+	if err := os.MkdirAll(fullOutputDir, 0755); err != nil {
+		fmt.Printf("Warning: Failed to create output directory %s: %v\n", fullOutputDir, err)
+	}
+
 	return &LocalStorage{
 		baseDir:   baseDir,
 		outputDir: outputDir,
@@ -23,7 +48,17 @@ func NewLocalStorage(baseDir, outputDir string) *LocalStorage {
 
 // CreateDir creates a directory and any necessary parents
 func (s *LocalStorage) CreateDir(path string) error {
-	return os.MkdirAll(path, os.ModePerm)
+	// If the path is relative and doesn't start with the baseDir, join it with baseDir
+	fullPath := path
+	if !filepath.IsAbs(path) && !strings.HasPrefix(path, s.baseDir) {
+		fullPath = filepath.Join(s.baseDir, path)
+	}
+
+	err := os.MkdirAll(fullPath, os.ModePerm)
+	if err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", fullPath, err)
+	}
+	return nil
 }
 
 // WriteFile writes data to a file, creating parent directories if needed
@@ -73,22 +108,22 @@ func (s *LocalStorage) ListDir(path string) ([]string, error) {
 
 // CreateProcessDir creates a directory for a specific process
 func (s *LocalStorage) CreateProcessDir(processID string) (string, error) {
-	processesDir := filepath.Join(s.baseDir, "processes")
-	if err := s.CreateDir(processesDir); err != nil {
-		return "", err
-	}
+	// Use the same base path structure as local downloads
+	localBaseDir := filepath.Dir(s.GetLocalDownloadDir(processID)) // Gets /<baseDir>/local/<processID>
+	processDir := filepath.Dir(localBaseDir)                       // Gets /<baseDir>/local
+	processDir = filepath.Join(processDir, processID)              // Gets /<baseDir>/local/<processID>
 
-	processDir := filepath.Join(processesDir, processID)
+	// Create the process directory
 	if err := s.CreateDir(processDir); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to create process directory: %w", err)
 	}
 
 	// Create subdirectories
 	if err := s.CreateDir(s.GetDownloadDir(processID)); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to create download directory: %w", err)
 	}
 	if err := s.CreateDir(s.GetTempDir(processID)); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to create temp directory: %w", err)
 	}
 
 	return processDir, nil
@@ -96,16 +131,23 @@ func (s *LocalStorage) CreateProcessDir(processID string) (string, error) {
 
 // GetDownloadDir returns the download directory for a process
 func (s *LocalStorage) GetDownloadDir(processID string) string {
-	return filepath.Join(s.baseDir, "processes", processID, "download")
+	// Maintain consistency with the local download directory structure
+	localBaseDir := filepath.Join(s.baseDir, "local", processID)
+	return filepath.Join(localBaseDir, "download")
 }
 
 // GetTempDir returns the temporary directory for a process
 func (s *LocalStorage) GetTempDir(processID string) string {
-	return filepath.Join(s.baseDir, "processes", processID, "temp")
+	// Use the same base path structure as local downloads to avoid permission issues
+	localDir := filepath.Dir(s.GetLocalDownloadDir(processID)) // This gets /<baseDir>/local/<processID>
+	return filepath.Join(localDir, "temp")
 }
 
 // GetOutputDir returns the output directory for a specific set
 func (s *LocalStorage) GetOutputDir(setName string) string {
+	if !filepath.IsAbs(s.outputDir) {
+		return filepath.Join(s.baseDir, s.outputDir, setName)
+	}
 	return filepath.Join(s.outputDir, setName)
 }
 
@@ -114,7 +156,8 @@ func (s *LocalStorage) CleanupProcessDir(processID string) error {
 	// Sleep for a bit to ensure all files are written and closed
 	time.Sleep(5 * time.Minute)
 
-	processDir := filepath.Join(s.baseDir, "processes", processID)
+	// Clean up the process directory in the local structure
+	processDir := filepath.Join(s.baseDir, "local", processID)
 	return os.RemoveAll(processDir)
 }
 
