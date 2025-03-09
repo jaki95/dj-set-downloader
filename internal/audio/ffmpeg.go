@@ -122,7 +122,7 @@ func (f *ffmpeg) extractAudio(inputPath string, startSeconds, duration float64, 
 
 	// Determine appropriate codec and format based on extension
 	outputCodec := "aac"
-	outputFormat := "m4a"
+	outputFormat := "mp4" // Default to mp4 container format
 
 	switch strings.ToLower(ext) {
 	case "mp3":
@@ -130,7 +130,7 @@ func (f *ffmpeg) extractAudio(inputPath string, startSeconds, duration float64, 
 		outputFormat = "mp3"
 	case "m4a":
 		outputCodec = "aac"
-		outputFormat = "m4a"
+		outputFormat = "mp4" // Use mp4 container for m4a files
 	case "wav":
 		outputCodec = "pcm_s16le"
 		outputFormat = "wav"
@@ -186,12 +186,12 @@ func (f *ffmpeg) addMetadataAndCover(inputPath, outputPath string, opts SplitPar
 	}
 
 	// Determine appropriate format based on extension
-	outputFormat := "m4a"
+	outputFormat := "mp4" // Default to mp4 container format
 	switch strings.ToLower(ext) {
 	case "mp3":
 		outputFormat = "mp3"
 	case "m4a":
-		outputFormat = "m4a"
+		outputFormat = "mp4" // Use mp4 container for m4a files
 	case "wav":
 		outputFormat = "wav"
 	case "flac":
