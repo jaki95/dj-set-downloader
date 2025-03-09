@@ -6,7 +6,6 @@ import (
 	"github.com/jaki95/dj-set-downloader/config"
 	"github.com/jaki95/dj-set-downloader/internal/audio"
 	"github.com/jaki95/dj-set-downloader/internal/downloader"
-	"github.com/jaki95/dj-set-downloader/internal/storage"
 	"github.com/jaki95/dj-set-downloader/internal/tracklist"
 )
 
@@ -41,16 +40,9 @@ func NewProcessor(cfg *config.Config) (Processor, error) {
 		return nil, fmt.Errorf("unsupported audio processor: %s", processorType)
 	}
 
-	// Create the storage
-	fileStorage, err := storage.NewStorage(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create storage: %w", err)
-	}
-
 	return &processor{
 		tracklistImporter: trackImporter,
 		setDownloader:     setDownloader,
 		audioProcessor:    audioProcessor,
-		storage:           fileStorage,
 	}, nil
 }
