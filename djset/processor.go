@@ -27,26 +27,6 @@ var (
 	OutputDir    = "output"            // Directory for final output
 )
 
-// ConfigureDirs allows setting custom directory paths (useful for testing)
-func ConfigureDirs(baseDir, processesDir, outputDir string) (restoreFunc func()) {
-	// Save original values
-	origBaseDir := BaseDir
-	origProcessesDir := ProcessesDir
-	origOutputDir := OutputDir
-
-	// Set new values
-	BaseDir = baseDir
-	ProcessesDir = processesDir
-	OutputDir = outputDir
-
-	// Return a function to restore the original values
-	return func() {
-		BaseDir = origBaseDir
-		ProcessesDir = origProcessesDir
-		OutputDir = origOutputDir
-	}
-}
-
 type processor struct {
 	tracklistImporter tracklist.Importer
 	setDownloader     downloader.Downloader
@@ -240,7 +220,7 @@ func (p *processor) downloadSet(ctx *processingContext) error {
 	err = p.setDownloader.Download(url, sanitizedSetName, ctx.downloadDir, func(progress int, message string) {
 		// Adjust the progress calculation to ensure it never goes negative
 		// Scale the original 0-100% to 10-50% range
-		adjustedProgress := 10 + (progress / 2) // This ensures progress starts at 10% and goes up to 50%
+		adjustedProgress := 10 + ((progress * 40) / 100)
 		ctx.progressCallback(adjustedProgress, message)
 	})
 	if err != nil {
