@@ -114,6 +114,12 @@ func (f *ffmpeg) extractAudio(inputPath string, startSeconds, duration float64, 
 		"duration", fmt.Sprintf("%.3f", duration),
 	)
 
+	// Make sure the output directory exists
+	outputDir := filepath.Dir(outputPath)
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
 	// Get the file extension from the output path
 	ext := filepath.Ext(outputPath)
 	if ext != "" {
@@ -130,7 +136,7 @@ func (f *ffmpeg) extractAudio(inputPath string, startSeconds, duration float64, 
 		outputFormat = "mp3"
 	case "m4a":
 		outputCodec = "aac"
-		outputFormat = "m4a"
+		outputFormat = "mp4"
 	case "wav":
 		outputCodec = "pcm_s16le"
 		outputFormat = "wav"
@@ -186,12 +192,12 @@ func (f *ffmpeg) addMetadataAndCover(inputPath, outputPath string, opts SplitPar
 	}
 
 	// Determine appropriate format based on extension
-	outputFormat := "m4a"
+	outputFormat := "mp4"
 	switch strings.ToLower(ext) {
 	case "mp3":
 		outputFormat = "mp3"
 	case "m4a":
-		outputFormat = "m4a"
+		outputFormat = "mp4"
 	case "wav":
 		outputFormat = "wav"
 	case "flac":

@@ -22,9 +22,7 @@ type StorageConfig struct {
 	Type string `yaml:"type"`
 
 	// Local storage options
-	DataDir   string `yaml:"data_dir"`
 	OutputDir string `yaml:"output_dir"`
-	TempDir   string `yaml:"temp_dir"`
 
 	// GCS storage options
 	BucketName      string `yaml:"bucket_name"`
@@ -52,16 +50,8 @@ func Load(path string) (*Config, error) {
 		config.Storage.Type = "local"
 	}
 
-	if config.Storage.DataDir == "" {
-		config.Storage.DataDir = "data"
-	}
-
 	if config.Storage.OutputDir == "" {
 		config.Storage.OutputDir = "output"
-	}
-
-	if config.Storage.TempDir == "" {
-		config.Storage.TempDir = "temp"
 	}
 
 	return config, nil

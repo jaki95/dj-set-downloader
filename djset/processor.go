@@ -3,6 +3,7 @@ package djset
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -11,7 +12,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jaki95/dj-set-downloader/internal/audio"
 	"github.com/jaki95/dj-set-downloader/internal/domain"
 	"github.com/jaki95/dj-set-downloader/internal/downloader"
@@ -22,9 +22,8 @@ import (
 
 // Define base directories for local storage - these can be configured globally
 var (
-	BaseDir      = "storage"           // Base directory for all storage
-	ProcessesDir = "storage/processes" // Directory for process-specific storage
-	OutputDir    = "output"            // Directory for final output
+	OutputDir = "output"                                         // Directory for final output
+	TempDir   = filepath.Join(os.TempDir(), "dj-set-downloader") // Base temp directory
 )
 
 type processor struct {
@@ -51,44 +50,44 @@ type ProcessingOptions struct {
 
 // processingContext encapsulates all state and options needed during processing
 type processingContext struct {
-	processID        string
 	opts             *ProcessingOptions
 	progressCallback func(int, string)
 	set              *domain.Tracklist
 	setLength        int
 
 	// File information
-	fileName        string
-	downloadedFile  string
-	actualExtension string
-	coverArtPath    string
-
-	// Paths
-	processDir       string
-	downloadDir      string
-	tempDir          string
-	processOutputDir string
+	inputFile string // The downloaded input file
+	extension string // The actual file extension
+	outputDir string // The final output directory for this set
 }
 
 // newProcessingContext creates a new processing context with the given options
 func newProcessingContext(opts *ProcessingOptions, progressCallback func(int, string)) *processingContext {
-	// Generate a unique process ID
-	processID := uuid.New().String()
-
-	// Create paths
-	processDir := filepath.Join(ProcessesDir, processID)
-	downloadDir := filepath.Join(processDir, "download")
-	tempDir := filepath.Join(processDir, "temp")
-
 	return &processingContext{
-		processID:        processID,
 		opts:             opts,
 		progressCallback: progressCallback,
 		setLength:        0, // Will be set after importing tracklist
-		processDir:       processDir,
-		downloadDir:      downloadDir,
-		tempDir:          tempDir,
 	}
+}
+
+// getDownloadDir returns the directory for downloading files
+func (ctx *processingContext) getDownloadDir() string {
+	return filepath.Join(TempDir, "downloads")
+}
+
+// getTempDir returns the directory for temporary processing
+func (ctx *processingContext) getTempDir() string {
+	return filepath.Join(TempDir, "processing")
+}
+
+// getCoverArtPath returns the path for the cover art
+func (ctx *processingContext) getCoverArtPath() string {
+	return filepath.Join(ctx.getTempDir(), "cover.jpg")
+}
+
+func init() {
+	// Clean up any leftover temp files from previous runs on startup
+	os.RemoveAll(TempDir)
 }
 
 func (p *processor) ProcessTracks(opts *ProcessingOptions, progressCallback func(int, string)) ([]string, error) {
@@ -100,10 +99,13 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions, progressCallback func
 		return nil, fmt.Errorf("failed to create base directories: %w", err)
 	}
 
-	// Create process-specific directories
-	if err := ensureProcessDirectories(ctx); err != nil {
-		return nil, fmt.Errorf("failed to create process directories: %w", err)
+	// Create temp directories
+	if err := ensureTempDirectories(ctx); err != nil {
+		return nil, fmt.Errorf("failed to create temp directories: %w", err)
 	}
+
+	// Ensure temp files are cleaned up
+	defer cleanupTempFiles(ctx)
 
 	// Step 1: Import tracklist
 	if err := p.importTracklist(ctx); err != nil {
@@ -126,26 +128,20 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions, progressCallback func
 		return nil, err
 	}
 
-	// Cleanup process directories unless there was an error
-	if err == nil {
-		go cleanupProcessDir(ctx.processDir)
-	}
-
 	return results, nil
-}
-
-// cleanupProcessDir removes process directories after a delay
-func cleanupProcessDir(processDir string) {
-	// Wait 5 minutes before cleanup to ensure files aren't still in use
-	time.Sleep(5 * time.Minute)
-	if err := os.RemoveAll(processDir); err != nil {
-		slog.Error("failed to cleanup process directory", "dir", processDir, "error", err)
-	}
 }
 
 // ensureBaseDirectories creates the necessary base directories
 func ensureBaseDirectories() error {
-	dirs := []string{BaseDir, ProcessesDir, OutputDir}
+	if err := os.MkdirAll(OutputDir, os.ModePerm); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+	return nil
+}
+
+// ensureTempDirectories creates temporary directories
+func ensureTempDirectories(ctx *processingContext) error {
+	dirs := []string{ctx.getDownloadDir(), ctx.getTempDir()}
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, os.ModePerm); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
@@ -154,15 +150,40 @@ func ensureBaseDirectories() error {
 	return nil
 }
 
-// ensureProcessDirectories creates process-specific directories
-func ensureProcessDirectories(ctx *processingContext) error {
-	dirs := []string{ctx.processDir, ctx.downloadDir, ctx.tempDir}
-	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, os.ModePerm); err != nil {
-			return fmt.Errorf("failed to create directory %s: %w", dir, err)
+// cleanupTempFiles removes temporary files
+func cleanupTempFiles(ctx *processingContext) {
+	// Remove track-specific temp directories
+	if err := os.RemoveAll(ctx.getDownloadDir()); err != nil {
+		slog.Error("Failed to cleanup download directory", "error", err)
+	}
+	if err := os.RemoveAll(ctx.getTempDir()); err != nil {
+		slog.Error("Failed to cleanup temp directory", "error", err)
+	}
+
+	// Try to remove the base temp directory if it's empty
+	if empty, _ := isDirEmpty(TempDir); empty {
+		if err := os.Remove(TempDir); err != nil {
+			slog.Error("Failed to cleanup base temp directory", "error", err)
 		}
 	}
-	return nil
+}
+
+// isDirEmpty checks if a directory is empty
+func isDirEmpty(dir string) (bool, error) {
+	f, err := os.Open(dir)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+
+	_, err = f.Readdirnames(1)
+	if err == nil {
+		return false, nil // Directory not empty
+	}
+	if err == io.EOF {
+		return true, nil // Directory empty
+	}
+	return false, err
 }
 
 func (p *processor) importTracklist(ctx *processingContext) error {
@@ -177,8 +198,8 @@ func (p *processor) importTracklist(ctx *processingContext) error {
 
 	// Create a specific output directory for this set
 	sanitizedSetName := sanitizeTitle(set.Name)
-	ctx.processOutputDir = filepath.Join(OutputDir, sanitizedSetName)
-	if err := os.MkdirAll(ctx.processOutputDir, os.ModePerm); err != nil {
+	ctx.outputDir = filepath.Join(OutputDir, sanitizedSetName)
+	if err := os.MkdirAll(ctx.outputDir, os.ModePerm); err != nil {
 		return fmt.Errorf("failed to create output directory for set: %w", err)
 	}
 
@@ -215,11 +236,15 @@ func (p *processor) downloadSet(ctx *processingContext) error {
 
 	// Download the set to the download directory with a predictable name
 	sanitizedSetName := sanitizeTitle(ctx.set.Name)
+	downloadDir := ctx.getDownloadDir()
+
+	// Create download directory
+	if err := os.MkdirAll(downloadDir, os.ModePerm); err != nil {
+		return fmt.Errorf("failed to create download directory: %w", err)
+	}
 
 	// Download the set - we'll let the downloader determine the extension
-	err = p.setDownloader.Download(url, sanitizedSetName, ctx.downloadDir, func(progress int, message string) {
-		// Adjust the progress calculation to ensure it never goes negative
-		// Scale the original 0-100% to 10-50% range
+	err = p.setDownloader.Download(url, sanitizedSetName, downloadDir, func(progress int, message string) {
 		adjustedProgress := 10 + ((progress * 40) / 100)
 		ctx.progressCallback(adjustedProgress, message)
 	})
@@ -228,40 +253,39 @@ func (p *processor) downloadSet(ctx *processingContext) error {
 	}
 
 	// Get all files in the download directory
-	files, err := os.ReadDir(ctx.downloadDir)
+	files, err := os.ReadDir(downloadDir)
 	if err != nil {
 		return fmt.Errorf("failed to read download directory: %w", err)
 	}
 
 	if len(files) == 0 {
-		return fmt.Errorf("no files found in download directory %s", ctx.downloadDir)
+		return fmt.Errorf("no files found in download directory %s", downloadDir)
 	}
 
 	// Use the first file (should be our downloaded set)
-	downloadedFile := filepath.Join(ctx.downloadDir, files[0].Name())
-	ctx.downloadedFile = downloadedFile
-	ctx.fileName = downloadedFile
+	ctx.inputFile = filepath.Join(downloadDir, files[0].Name())
 
 	// Get the extension from the filename
-	ctx.actualExtension = strings.TrimPrefix(filepath.Ext(downloadedFile), ".")
-	if ctx.actualExtension == "" {
+	ctx.extension = strings.TrimPrefix(filepath.Ext(ctx.inputFile), ".")
+	if ctx.extension == "" {
 		// Default to mp3 if no extension
-		ctx.actualExtension = "mp3"
+		ctx.extension = "mp3"
 	}
 
-	slog.Info("Downloaded set", "file", downloadedFile, "extension", ctx.actualExtension)
+	slog.Info("Downloaded set", "file", ctx.inputFile, "extension", ctx.extension)
 	return nil
 }
 
 func (p *processor) prepareForProcessing(ctx *processingContext) error {
-	slog.Info("Preparing for processing", "set", ctx.set.Name, "file", ctx.fileName)
+	slog.Info("Preparing for processing", "set", ctx.set.Name, "file", ctx.inputFile)
 
-	// Create a specific path for the cover art in the temp directory
-	coverArtPath := filepath.Join(ctx.tempDir, "cover.jpg")
-	ctx.coverArtPath = coverArtPath
+	// Create temp directory
+	if err := os.MkdirAll(ctx.getTempDir(), os.ModePerm); err != nil {
+		return fmt.Errorf("failed to create temp directory: %w", err)
+	}
 
 	// Extract cover art
-	if err := p.audioProcessor.ExtractCoverArt(ctx.fileName, coverArtPath); err != nil {
+	if err := p.audioProcessor.ExtractCoverArt(ctx.inputFile, ctx.getCoverArtPath()); err != nil {
 		return fmt.Errorf("failed to extract cover art: %w", err)
 	}
 
@@ -281,7 +305,7 @@ func (p *processor) processTracks(ctx *processingContext) ([]string, error) {
 
 	// Use the updated ProcessingOptions with the actual extension
 	updatedOpts := *ctx.opts
-	updatedOpts.FileExtension = ctx.actualExtension
+	updatedOpts.FileExtension = ctx.extension
 
 	return p.splitTracks(ctx, updatedOpts, bar)
 }
@@ -412,7 +436,7 @@ func (p *processor) processTrack(
 	trackName := fmt.Sprintf("%02d-%s", trackNumber, safeTitle)
 
 	// Create a track-specific temp directory for processing
-	trackTempDir := filepath.Join(processingCtx.tempDir, fmt.Sprintf("track_%02d", trackNumber))
+	trackTempDir := filepath.Join(processingCtx.getTempDir(), fmt.Sprintf("track_%02d", trackNumber))
 	if err := os.MkdirAll(trackTempDir, os.ModePerm); err != nil {
 		select {
 		case errCh <- fmt.Errorf("failed to create track temp directory for track %d (%s): %w",
@@ -425,18 +449,18 @@ func (p *processor) processTrack(
 
 	// Create output paths
 	tempOutputPath := filepath.Join(trackTempDir, trackName)
-	finalOutputPath := filepath.Join(processingCtx.processOutputDir, trackName)
+	finalOutputPath := filepath.Join(processingCtx.outputDir, trackName)
 
 	// Create parameters for audio processor
 	splitParams := audio.SplitParams{
-		InputPath:     processingCtx.fileName,
+		InputPath:     processingCtx.inputFile,
 		OutputPath:    tempOutputPath,
 		FileExtension: opts.FileExtension,
 		Track:         *track,
 		TrackCount:    processingCtx.setLength,
 		Artist:        processingCtx.set.Artist,
 		Name:          processingCtx.set.Name,
-		CoverArtPath:  processingCtx.coverArtPath,
+		CoverArtPath:  processingCtx.getCoverArtPath(),
 	}
 
 	// Process the track
