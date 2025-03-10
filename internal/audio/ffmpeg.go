@@ -1,6 +1,7 @@
 package audio
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -38,7 +39,7 @@ func (f *ffmpeg) validateFile(path string) error {
 	return nil
 }
 
-func (f *ffmpeg) ExtractCoverArt(inputPath, coverPath string) error {
+func (f *ffmpeg) ExtractCoverArt(ctx context.Context, inputPath, coverPath string) error {
 	slog.Debug("Extracting cover art", "input", inputPath, "output", coverPath)
 
 	// Validate input file before processing
@@ -52,17 +53,20 @@ func (f *ffmpeg) ExtractCoverArt(inputPath, coverPath string) error {
 		return fmt.Errorf("failed to create output directory for cover art: %w", err)
 	}
 
-	cmd := exec.Command("ffmpeg", "-y", "-i", inputPath, "-map", "0:v:0", "-c:v", "mjpeg", "-vframes", "1", coverPath)
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-y", "-i", inputPath, "-map", "0:v:0", "-c:v", "mjpeg", "-vframes", "1", coverPath)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return fmt.Errorf("ffmpeg cover extraction error: %s: %w", string(output), err)
 	}
 
 	return nil
 }
 
-func (f *ffmpeg) Split(opts SplitParams) error {
+func (f *ffmpeg) Split(ctx context.Context, opts SplitParams) error {
 	// Validate input file before processing
 	if err := f.validateFile(opts.InputPath); err != nil {
 		return fmt.Errorf("track splitting failed on input validation: %w", err)
@@ -96,17 +100,24 @@ func (f *ffmpeg) Split(opts SplitParams) error {
 	defer os.Remove(tempAudio)
 
 	// First pass: Extract audio segment
-	if err := f.extractAudio(opts.InputPath, startSeconds, duration, tempAudio); err != nil {
+	if err := f.extractAudio(ctx, opts.InputPath, startSeconds, duration, tempAudio); err != nil {
 		return err
+	}
+
+	// Check for cancellation between passes
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
 	}
 
 	// Second pass: Attach metadata and cover art
 	finalPath := fmt.Sprintf("%s.%s", opts.OutputPath, opts.FileExtension)
 
-	return f.addMetadataAndCover(tempAudio, finalPath, opts)
+	return f.addMetadataAndCover(ctx, tempAudio, finalPath, opts)
 }
 
-func (f *ffmpeg) extractAudio(inputPath string, startSeconds, duration float64, outputPath string) error {
+func (f *ffmpeg) extractAudio(ctx context.Context, inputPath string, startSeconds, duration float64, outputPath string) error {
 	slog.Debug("Extracting audio segment",
 		"input", inputPath,
 		"output", outputPath,
@@ -165,9 +176,12 @@ func (f *ffmpeg) extractAudio(inputPath string, startSeconds, duration float64, 
 		outputPath,
 	)
 
-	cmd := exec.Command("ffmpeg", args...)
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		cmdStr := cmd.String()
 		if len(cmdStr) > 200 {
 			cmdStr = cmdStr[:200] + "..." // Truncate very long commands
@@ -178,7 +192,7 @@ func (f *ffmpeg) extractAudio(inputPath string, startSeconds, duration float64, 
 	return nil
 }
 
-func (f *ffmpeg) addMetadataAndCover(inputPath, outputPath string, opts SplitParams) error {
+func (f *ffmpeg) addMetadataAndCover(ctx context.Context, inputPath, outputPath string, opts SplitParams) error {
 	slog.Debug("Adding metadata and cover art",
 		"input", inputPath,
 		"output", outputPath,
@@ -242,9 +256,12 @@ func (f *ffmpeg) addMetadataAndCover(inputPath, outputPath string, opts SplitPar
 
 	args = append(args, outputPath)
 
-	cmd := exec.Command("ffmpeg", args...)
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		cmdStr := cmd.String()
 		if len(cmdStr) > 200 {
 			cmdStr = cmdStr[:200] + "..." // Truncate very long commands

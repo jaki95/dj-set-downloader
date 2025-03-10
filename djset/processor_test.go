@@ -1,6 +1,7 @@
 package djset
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -73,8 +74,8 @@ type MockAudioProcessor struct {
 	mock.Mock
 }
 
-func (m *MockAudioProcessor) ExtractCoverArt(inputPath, coverPath string) error {
-	args := m.Called(inputPath, coverPath)
+func (m *MockAudioProcessor) ExtractCoverArt(ctx context.Context, inputPath, coverPath string) error {
+	args := m.Called(ctx, inputPath, coverPath)
 
 	// Create a dummy cover art file
 	dir := filepath.Dir(coverPath)
@@ -85,8 +86,8 @@ func (m *MockAudioProcessor) ExtractCoverArt(inputPath, coverPath string) error 
 	return args.Error(0)
 }
 
-func (m *MockAudioProcessor) Split(params audio.SplitParams) error {
-	args := m.Called(params)
+func (m *MockAudioProcessor) Split(ctx context.Context, params audio.SplitParams) error {
+	args := m.Called(ctx, params)
 
 	// Create a dummy output file
 	outputFile := fmt.Sprintf("%s.%s", params.OutputPath, params.FileExtension)
@@ -631,7 +632,7 @@ func TestProcessTracks(t *testing.T) {
 	mockAudioProcessor := new(MockAudioProcessor)
 
 	// Set up mock for audio processor
-	mockAudioProcessor.On("Split", mock.MatchedBy(func(params audio.SplitParams) bool {
+	mockAudioProcessor.On("Split", mock.Anything, mock.MatchedBy(func(params audio.SplitParams) bool {
 		return strings.Contains(params.OutputPath, "01-Track_1") &&
 			params.FileExtension == "mp3" &&
 			params.Track.Title == "Track 1" &&
@@ -644,7 +645,7 @@ func TestProcessTracks(t *testing.T) {
 		audioProcessor: mockAudioProcessor,
 	}
 
-	results, err := p.processTracks(ctx)
+	results, err := p.processTracks(context.Background(), ctx)
 	assert.NoError(t, err)
 	assert.Len(t, results, 1)
 	assert.Equal(t, expectedOutputFile, results[0])
@@ -669,7 +670,7 @@ func TestPrepareForProcessing(t *testing.T) {
 	err = os.WriteFile(inputFilePath, []byte("test data"), 0644)
 	assert.NoError(t, err)
 
-	ctx := &processingContext{
+	procCtx := &processingContext{
 		set: &domain.Tracklist{
 			Name:   "Test Set",
 			Artist: "Test Artist",
@@ -681,13 +682,13 @@ func TestPrepareForProcessing(t *testing.T) {
 	mockAudioProcessor := new(MockAudioProcessor)
 
 	// Set up mock expectations
-	mockAudioProcessor.On("ExtractCoverArt", inputFilePath, expectedCoverArtPath).Return(nil)
+	mockAudioProcessor.On("ExtractCoverArt", mock.Anything, inputFilePath, expectedCoverArtPath).Return(nil)
 
 	p := &processor{
 		audioProcessor: mockAudioProcessor,
 	}
 
-	err = p.prepareForProcessing(ctx)
+	err = p.prepareForProcessing(context.Background(), procCtx)
 	assert.NoError(t, err)
 
 	mockAudioProcessor.AssertExpectations(t)
@@ -713,4 +714,114 @@ func TestEnsureDirectories(t *testing.T) {
 	assert.NoError(t, err)
 	assert.DirExists(t, ctx.getDownloadDir())
 	assert.DirExists(t, ctx.getTempDir())
+}
+
+func TestProcessTracksCancellation(t *testing.T) {
+	// Setup test environment
+	testDirs := setupTestDirectories(t)
+	p, mockImporter, mockDownloader, mockAudioProcessor, _ := setupTestProcessor()
+
+	// Create test data
+	tracklist := &domain.Tracklist{
+		Name:   "Test Set",
+		Artist: "Test Artist",
+		Tracks: []*domain.Track{
+			{Title: "Track 1", StartTime: "0:00", EndTime: "1:00"},
+			{Title: "Track 2", StartTime: "1:00", EndTime: "2:00"},
+			{Title: "Track 3", StartTime: "2:00", EndTime: "3:00"},
+		},
+	}
+
+	// Setup mocks
+	mockImporter.On("Import", "test_path").Return(tracklist, nil)
+	mockDownloader.On("FindURL", "Test Artist Test Set").Return("test_url", nil)
+	mockDownloader.On("Download", "test_url", "Test_Set", mock.Anything, mock.Anything).Return(nil)
+	mockAudioProcessor.On("ExtractCoverArt", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	mockAudioProcessor.On("Split", mock.Anything, mock.Anything).Return(nil)
+
+	// Create a cancellable context
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Create test options
+	opts := &ProcessingOptions{
+		TracklistPath:      "test_path",
+		MaxConcurrentTasks: 1,
+	}
+
+	// Create a channel to track progress
+	progressCh := make(chan struct{})
+
+	// Start processing in a goroutine
+	resultCh := make(chan error)
+	go func() {
+		_, err := p.ProcessTracks(ctx, opts, func(i int, s string) {
+			// Signal when we start processing tracks
+			if s == "Processing 3 tracks" {
+				progressCh <- struct{}{}
+			}
+		})
+		resultCh <- err
+	}()
+
+	// Wait for track processing to start
+	<-progressCh
+
+	// Cancel the context
+	cancel()
+
+	// Wait for processing to complete and check the error
+	err := <-resultCh
+	assert.ErrorIs(t, err, context.Canceled)
+
+	// Verify that temporary files are cleaned up
+	assert.NoDirExists(t, filepath.Join(testDirs.tempDir, "downloads"))
+	assert.NoDirExists(t, filepath.Join(testDirs.tempDir, "processing"))
+}
+
+func TestProcessTracksGracefulShutdown(t *testing.T) {
+	// Setup test environment
+	testDirs := setupTestDirectories(t)
+	p, mockImporter, mockDownloader, mockAudioProcessor, _ := setupTestProcessor()
+
+	// Create test data
+	tracklist := &domain.Tracklist{
+		Name:   "Test Set",
+		Artist: "Test Artist",
+		Tracks: []*domain.Track{
+			{Title: "Track 1", StartTime: "0:00", EndTime: "1:00"},
+			{Title: "Track 2", StartTime: "1:00", EndTime: "2:00"},
+		},
+	}
+
+	// Setup mocks
+	mockImporter.On("Import", "test_path").Return(tracklist, nil)
+	mockDownloader.On("FindURL", "Test Artist Test Set").Return("test_url", nil)
+	mockDownloader.On("Download", "test_url", "Test_Set", mock.Anything, mock.Anything).Return(nil)
+	mockAudioProcessor.On("ExtractCoverArt", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+
+	// Make Split take some time and check context
+	mockAudioProcessor.On("Split", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		// Simulate some work
+		time.Sleep(100 * time.Millisecond)
+	}).Return(nil)
+
+	// Create a cancellable context
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+
+	// Create test options
+	opts := &ProcessingOptions{
+		TracklistPath:      "test_path",
+		MaxConcurrentTasks: 1,
+	}
+
+	// Process tracks
+	_, err := p.ProcessTracks(ctx, opts, func(i int, s string) {})
+
+	// Verify that the operation was cancelled
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+
+	// Verify that temporary files are cleaned up
+	assert.NoDirExists(t, filepath.Join(testDirs.tempDir, "downloads"))
+	assert.NoDirExists(t, filepath.Join(testDirs.tempDir, "processing"))
 }

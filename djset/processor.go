@@ -90,9 +90,9 @@ func init() {
 	os.RemoveAll(TempDir)
 }
 
-func (p *processor) ProcessTracks(opts *ProcessingOptions, progressCallback func(int, string)) ([]string, error) {
+func (p *processor) ProcessTracks(ctx context.Context, opts *ProcessingOptions, progressCallback func(int, string)) ([]string, error) {
 	// Setup a processing context
-	ctx := newProcessingContext(opts, progressCallback)
+	procCtx := newProcessingContext(opts, progressCallback)
 
 	// Create base directories
 	if err := ensureBaseDirectories(); err != nil {
@@ -100,30 +100,58 @@ func (p *processor) ProcessTracks(opts *ProcessingOptions, progressCallback func
 	}
 
 	// Create temp directories
-	if err := ensureTempDirectories(ctx); err != nil {
+	if err := ensureTempDirectories(procCtx); err != nil {
 		return nil, fmt.Errorf("failed to create temp directories: %w", err)
 	}
 
 	// Ensure temp files are cleaned up
-	defer cleanupTempFiles(ctx)
+	defer cleanupTempFiles(procCtx)
+
+	// Check for cancellation
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
 
 	// Step 1: Import tracklist
-	if err := p.importTracklist(ctx); err != nil {
+	if err := p.importTracklist(procCtx); err != nil {
 		return nil, err
+	}
+
+	// Check for cancellation
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
 	}
 
 	// Step 2: Download set
-	if err := p.downloadSet(ctx); err != nil {
+	if err := p.downloadSet(procCtx); err != nil {
 		return nil, err
+	}
+
+	// Check for cancellation
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
 	}
 
 	// Step 3: Prepare for processing (extract cover art)
-	if err := p.prepareForProcessing(ctx); err != nil {
+	if err := p.prepareForProcessing(ctx, procCtx); err != nil {
 		return nil, err
 	}
 
+	// Check for cancellation
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	// Step 4: Split tracks
-	results, err := p.processTracks(ctx)
+	results, err := p.processTracks(ctx, procCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -276,25 +304,25 @@ func (p *processor) downloadSet(ctx *processingContext) error {
 	return nil
 }
 
-func (p *processor) prepareForProcessing(ctx *processingContext) error {
-	slog.Info("Preparing for processing", "set", ctx.set.Name, "file", ctx.inputFile)
+func (p *processor) prepareForProcessing(ctx context.Context, procCtx *processingContext) error {
+	slog.Info("Preparing for processing", "set", procCtx.set.Name, "file", procCtx.inputFile)
 
 	// Create temp directory
-	if err := os.MkdirAll(ctx.getTempDir(), os.ModePerm); err != nil {
+	if err := os.MkdirAll(procCtx.getTempDir(), os.ModePerm); err != nil {
 		return fmt.Errorf("failed to create temp directory: %w", err)
 	}
 
 	// Extract cover art
-	if err := p.audioProcessor.ExtractCoverArt(ctx.inputFile, ctx.getCoverArtPath()); err != nil {
+	if err := p.audioProcessor.ExtractCoverArt(ctx, procCtx.inputFile, procCtx.getCoverArtPath()); err != nil {
 		return fmt.Errorf("failed to extract cover art: %w", err)
 	}
 
 	return nil
 }
 
-func (p *processor) processTracks(ctx *processingContext) ([]string, error) {
+func (p *processor) processTracks(ctx context.Context, procCtx *processingContext) ([]string, error) {
 	bar := progressbar.NewOptions(
-		ctx.setLength,
+		procCtx.setLength,
 		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
 		progressbar.OptionEnableColorCodes(true),
 		progressbar.OptionSetTheme(progressbar.ThemeASCII),
@@ -304,10 +332,10 @@ func (p *processor) processTracks(ctx *processingContext) ([]string, error) {
 	)
 
 	// Use the updated ProcessingOptions with the actual extension
-	updatedOpts := *ctx.opts
-	updatedOpts.FileExtension = ctx.extension
+	updatedOpts := *procCtx.opts
+	updatedOpts.FileExtension = procCtx.extension
 
-	return p.splitTracks(ctx, updatedOpts, bar)
+	return p.splitTracks(ctx, procCtx, updatedOpts, bar)
 }
 
 func sanitizeTitle(title string) string {
@@ -316,32 +344,29 @@ func sanitizeTitle(title string) string {
 }
 
 func (p *processor) splitTracks(
-	ctx *processingContext,
+	ctx context.Context,
+	procCtx *processingContext,
 	opts ProcessingOptions,
 	bar *progressbar.ProgressBar,
 ) ([]string, error) {
 	// Configure worker pool
 	maxWorkers := p.getMaxWorkers(opts.MaxConcurrentTasks)
 
-	// Setup processing context and channels
-	processingCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	// Setup channels for communication
 	errCh := make(chan error, 1)
-	filePathCh := make(chan string, ctx.setLength)
+	filePathCh := make(chan string, procCtx.setLength)
 	semaphore := make(chan struct{}, maxWorkers)
 
 	// Start initial progress
-	slog.Info("Splitting tracks", "count", ctx.setLength, "extension", opts.FileExtension)
-	ctx.progressCallback(50, fmt.Sprintf("Processing %d tracks", ctx.setLength))
+	slog.Info("Splitting tracks", "count", procCtx.setLength, "extension", opts.FileExtension)
+	procCtx.progressCallback(50, fmt.Sprintf("Processing %d tracks", procCtx.setLength))
 
 	// Start track processing with a pool of workers
 	var wg sync.WaitGroup
 	var completedTracks int32 // Atomic counter for completed tracks
 
 	// Launch worker goroutines for each track
-	for i, t := range ctx.set.Tracks {
+	for i, t := range procCtx.set.Tracks {
 		wg.Add(1)
 		t := t // Capture variable
 		i := i
@@ -351,7 +376,11 @@ func (p *processor) splitTracks(
 
 			// Check if processing should be canceled
 			select {
-			case <-processingCtx.Done():
+			case <-ctx.Done():
+				select {
+				case errCh <- ctx.Err():
+				default:
+				}
 				return
 			default:
 			}
@@ -359,16 +388,20 @@ func (p *processor) splitTracks(
 			// Acquire semaphore slot or abort if canceled
 			select {
 			case semaphore <- struct{}{}:
-			case <-processingCtx.Done():
+			case <-ctx.Done():
+				select {
+				case errCh <- ctx.Err():
+				default:
+				}
 				return
 			}
 			defer func() { <-semaphore }()
 
 			// Process the track and handle errors
 			p.processTrack(
-				processingCtx, cancel,
-				i, t,
 				ctx,
+				i, t,
+				procCtx,
 				opts,
 				bar,
 				&completedTracks,
@@ -386,9 +419,15 @@ func (p *processor) splitTracks(
 	}()
 
 	// Collect file paths from successful operations
-	filePaths := make([]string, 0, ctx.setLength)
+	filePaths := make([]string, 0, procCtx.setLength)
 	for path := range filePathCh {
-		filePaths = append(filePaths, path)
+		// Check for cancellation while collecting results
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+			filePaths = append(filePaths, path)
+		}
 	}
 
 	// Check if any errors occurred
@@ -397,7 +436,7 @@ func (p *processor) splitTracks(
 	}
 
 	slog.Info("Splitting completed")
-	ctx.progressCallback(100, "Processing completed")
+	procCtx.progressCallback(100, "Processing completed")
 	return filePaths, nil
 }
 
@@ -412,10 +451,9 @@ func (p *processor) getMaxWorkers(requested int) int {
 // processTrack handles the processing of a single track
 func (p *processor) processTrack(
 	ctx context.Context,
-	cancel context.CancelFunc,
 	trackIndex int,
 	track *domain.Track,
-	processingCtx *processingContext,
+	procCtx *processingContext,
 	opts ProcessingOptions,
 	bar *progressbar.ProgressBar,
 	completedTracks *int32,
@@ -431,17 +469,27 @@ func (p *processor) processTrack(
 	go p.monitorTrackProcessing(done, processingStartTime, trackNumber, track.Title)
 	defer close(done)
 
+	// Check for cancellation before starting
+	select {
+	case <-ctx.Done():
+		select {
+		case errCh <- ctx.Err():
+		default:
+		}
+		return
+	default:
+	}
+
 	// Create track name with proper numbering
 	safeTitle := sanitizeTitle(track.Title)
 	trackName := fmt.Sprintf("%02d-%s", trackNumber, safeTitle)
 
 	// Create a track-specific temp directory for processing
-	trackTempDir := filepath.Join(processingCtx.getTempDir(), fmt.Sprintf("track_%02d", trackNumber))
+	trackTempDir := filepath.Join(procCtx.getTempDir(), fmt.Sprintf("track_%02d", trackNumber))
 	if err := os.MkdirAll(trackTempDir, os.ModePerm); err != nil {
 		select {
 		case errCh <- fmt.Errorf("failed to create track temp directory for track %d (%s): %w",
 			trackNumber, track.Title, err):
-			cancel()
 		default:
 		}
 		return
@@ -449,30 +497,40 @@ func (p *processor) processTrack(
 
 	// Create output paths
 	tempOutputPath := filepath.Join(trackTempDir, trackName)
-	finalOutputPath := filepath.Join(processingCtx.outputDir, trackName)
+	finalOutputPath := filepath.Join(procCtx.outputDir, trackName)
 
 	// Create parameters for audio processor
 	splitParams := audio.SplitParams{
-		InputPath:     processingCtx.inputFile,
+		InputPath:     procCtx.inputFile,
 		OutputPath:    tempOutputPath,
 		FileExtension: opts.FileExtension,
 		Track:         *track,
-		TrackCount:    processingCtx.setLength,
-		Artist:        processingCtx.set.Artist,
-		Name:          processingCtx.set.Name,
-		CoverArtPath:  processingCtx.getCoverArtPath(),
+		TrackCount:    procCtx.setLength,
+		Artist:        procCtx.set.Artist,
+		Name:          procCtx.set.Name,
+		CoverArtPath:  procCtx.getCoverArtPath(),
 	}
 
 	// Process the track
-	if err := p.audioProcessor.Split(splitParams); err != nil {
+	if err := p.audioProcessor.Split(ctx, splitParams); err != nil {
 		errorMsg := fmt.Sprintf("Failed to split track %d (%s): %v", trackNumber, track.Title, err)
 		slog.Error(errorMsg)
 		select {
 		case errCh <- fmt.Errorf("failed to process track %d (%s): %w", trackNumber, track.Title, err):
-			cancel()
 		default:
 		}
 		return
+	}
+
+	// Check for cancellation before moving the file
+	select {
+	case <-ctx.Done():
+		select {
+		case errCh <- ctx.Err():
+		default:
+		}
+		return
+	default:
 	}
 
 	// Move the processed file to the final output directory
@@ -485,7 +543,6 @@ func (p *processor) processTrack(
 		select {
 		case errCh <- fmt.Errorf("failed to read processed track file %d (%s): %w",
 			trackNumber, track.Title, err):
-			cancel()
 		default:
 		}
 		return
@@ -496,14 +553,13 @@ func (p *processor) processTrack(
 		select {
 		case errCh <- fmt.Errorf("failed to write final track file %d (%s): %w",
 			trackNumber, track.Title, err):
-			cancel()
 		default:
 		}
 		return
 	}
 
 	// Update progress
-	p.updateTrackProgress(bar, completedTracks, processingCtx.setLength, processingCtx.progressCallback)
+	p.updateTrackProgress(bar, completedTracks, procCtx.setLength, procCtx.progressCallback)
 
 	// Add the final path to the result channel
 	filePathCh <- finalFilePath

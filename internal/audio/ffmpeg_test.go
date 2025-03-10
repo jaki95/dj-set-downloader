@@ -1,6 +1,7 @@
 package audio
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -132,7 +133,7 @@ func TestExtractCoverArt(t *testing.T) {
 	engine := NewFFMPEGEngine()
 
 	// Test
-	err := engine.ExtractCoverArt(inputPath, coverPath)
+	err := engine.ExtractCoverArt(context.Background(), inputPath, coverPath)
 
 	// Assert
 	assert.NoError(t, err)
@@ -174,7 +175,7 @@ func TestSplit(t *testing.T) {
 	}
 
 	// Test
-	err := engine.Split(params)
+	err := engine.Split(context.Background(), params)
 
 	// Assert
 	assert.NoError(t, err)

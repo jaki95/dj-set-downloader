@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
 
 	"github.com/jaki95/dj-set-downloader/config"
 	"github.com/jaki95/dj-set-downloader/djset"
@@ -41,6 +43,19 @@ func main() {
 		return
 	}
 
+	// Create a context that can be cancelled
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Handle interrupt signal
+	signalCh := make(chan os.Signal, 1)
+	signal.Notify(signalCh, os.Interrupt)
+	go func() {
+		<-signalCh
+		slog.Info("Received interrupt signal, cancelling operations...")
+		cancel()
+	}()
+
 	opts := &djset.ProcessingOptions{
 		TracklistPath:      *tracklistURL,
 		DJSetURL:           *soundcloudURL,
@@ -48,8 +63,12 @@ func main() {
 		MaxConcurrentTasks: *maxWorkers,
 	}
 
-	if _, err := processor.ProcessTracks(opts, func(i int, s string) {}); err != nil {
-		slog.Error(err.Error())
+	if _, err := processor.ProcessTracks(ctx, opts, func(i int, s string) {}); err != nil {
+		if err == context.Canceled {
+			slog.Info("Processing was cancelled")
+		} else {
+			slog.Error(err.Error())
+		}
 		return
 	}
 }

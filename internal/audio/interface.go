@@ -1,11 +1,15 @@
 package audio
 
-import "github.com/jaki95/dj-set-downloader/internal/domain"
+import (
+	"context"
+
+	"github.com/jaki95/dj-set-downloader/internal/domain"
+)
 
 // Processor processes an audio track.
 type Processor interface {
-	ExtractCoverArt(inputPath, coverPath string) error
-	Split(sp SplitParams) error
+	ExtractCoverArt(ctx context.Context, inputPath, coverPath string) error
+	Split(ctx context.Context, sp SplitParams) error
 }
 
 type SplitParams struct {

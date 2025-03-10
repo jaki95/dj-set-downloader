@@ -1,6 +1,7 @@
 package djset
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/jaki95/dj-set-downloader/config"
@@ -10,7 +11,7 @@ import (
 )
 
 type Processor interface {
-	ProcessTracks(opts *ProcessingOptions, progressCallback func(int, string)) ([]string, error)
+	ProcessTracks(ctx context.Context, opts *ProcessingOptions, progressCallback func(int, string)) ([]string, error)
 }
 
 func NewProcessor(cfg *config.Config) (Processor, error) {
