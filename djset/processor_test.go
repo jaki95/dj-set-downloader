@@ -221,17 +221,6 @@ func setupTestDirectories(t *testing.T) testDirStructure {
 	return dirs
 }
 
-func createTestFile(t *testing.T, path, content string) {
-	t.Helper()
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		t.Fatalf("Failed to create directory %s: %v", dir, err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		t.Fatalf("Failed to create test file %s: %v", path, err)
-	}
-}
-
 func TestNew(t *testing.T) {
 	// Setup environment for SoundCloud
 	originalClientID := os.Getenv("SOUNDCLOUD_CLIENT_ID")
