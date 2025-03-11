@@ -323,6 +323,17 @@ func (p *processor) prepareForProcessing(ctx context.Context, procCtx *processin
 		return fmt.Errorf("failed to extract cover art: %w", err)
 	}
 
+	file, err := os.ReadFile(procCtx.getCoverArtPath())
+	if err != nil {
+		slog.Warn("Failed to read cover art", "error", err)
+	}
+
+	if len(file) > 0 {
+		procCtx.progressCallback(50, "Cover art extracted", file)
+	} else {
+		procCtx.progressCallback(50, "Cover art not found", nil)
+	}
+
 	return nil
 }
 
