@@ -170,8 +170,12 @@ func (t *TrackIDParser) setCommonHeaders(req *http.Request) {
 
 func (t *TrackIDParser) parseTracklist(resp *TrackIDResponse) (*domain.Tracklist, error) {
 
+	title := resp.Result.Title
+	artist := inferArtistFromTitle(title)
+
 	tracklist := &domain.Tracklist{
-		Name: SanitizeFilename(resp.Result.Title),
+		Name:   title,
+		Artist: artist,
 	}
 	totalDuration := resp.Result.Duration
 	trackCounter := 1
@@ -326,4 +330,95 @@ func SanitizeFilename(filename string) string {
 	safeName = strings.ReplaceAll(safeName, "__", "_") // Avoid double underscores
 
 	return safeName
+}
+
+// inferArtistFromTitle attempts to extract the artist name from a DJ set title
+// based on common patterns like "Artist - Title", "Artist @ Venue", etc.
+func inferArtistFromTitle(title string) string {
+	// Common separators in DJ set titles
+	separators := []struct {
+		pattern string
+		regex   *regexp.Regexp
+	}{
+		// Artist - Title
+		{"-", regexp.MustCompile(`^([^-]+)\s*-\s*.+`)},
+		// Artist @ Venue/Event
+		{"@", regexp.MustCompile(`^([^@]+)\s*@\s*.+`)},
+		// Artist | Event/Show
+		{"|", regexp.MustCompile(`^([^|]+)\s*\|\s*.+`)},
+		// Artist presents Title
+		{"presents", regexp.MustCompile(`^([^\s]+(?:\s+[^\s]+)?)\s+presents\s+.+`)},
+		// Artist live at Venue
+		{"live at", regexp.MustCompile(`^([^(]+?)\s+live\s+at\s+.+`)},
+	}
+
+	for _, sep := range separators {
+		matches := sep.regex.FindStringSubmatch(title)
+		if len(matches) > 1 {
+			return strings.TrimSpace(matches[1])
+		}
+	}
+
+	// Special format for series like "Drumcode Radio Live" -> "Drumcode Radio"
+	// and "Anjunadeep Edition Episode 400" -> "Anjunadeep Edition"
+	seriesPatterns := []struct {
+		regex     *regexp.Regexp
+		maxGroups int // How many words to consider as the artist name
+	}{
+		{regexp.MustCompile(`^((?:[A-Z][a-z]*\s*)+)(?:Live|Episode|Podcast|Radio Show|Mix|Set)\b`), 2},
+	}
+
+	for _, pattern := range seriesPatterns {
+		matches := pattern.regex.FindStringSubmatch(title)
+		if len(matches) > 1 {
+			words := strings.Fields(matches[1])
+			if len(words) > pattern.maxGroups {
+				words = words[:pattern.maxGroups]
+			}
+			return strings.Join(words, " ")
+		}
+	}
+
+	// If no patterns match, check if there's any whitespace - take first part
+	// This is less reliable but can work for cases like "Artist Title"
+	parts := strings.Fields(title)
+	if len(parts) > 1 {
+		// Skip articles and common non-artist words
+		skipWords := map[string]bool{
+			"The": true, "A": true, "An": true,
+			"By": true, "With": true, "And": true,
+			"From": true, "Of": true, "In": true,
+			"On": true, "At": true, "To": true,
+		}
+
+		// If first word is a skip word, don't attempt this heuristic
+		if len(parts) > 0 && skipWords[parts[0]] {
+			return ""
+		}
+
+		// If first 2-3 words are capitalized, they likely represent an artist name
+		// This is a heuristic and not always accurate
+		nameCandidate := ""
+		wordCount := min(3, len(parts))
+
+		for i := 0; i < wordCount; i++ {
+			// Check if word starts with uppercase (likely part of a name)
+			word := parts[i]
+			if len(word) > 0 && word[0] >= 'A' && word[0] <= 'Z' && !skipWords[word] {
+				if nameCandidate != "" {
+					nameCandidate += " "
+				}
+				nameCandidate += word
+			} else if nameCandidate != "" {
+				// Stop if we've already found some name parts and hit a non-matching word
+				break
+			}
+		}
+
+		if nameCandidate != "" {
+			return nameCandidate
+		}
+	}
+
+	return "" // No pattern matched
 }
