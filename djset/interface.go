@@ -11,7 +11,7 @@ import (
 )
 
 type Processor interface {
-	ProcessTracks(ctx context.Context, opts *ProcessingOptions, progressCallback func(int, string)) ([]string, error)
+	ProcessTracks(ctx context.Context, opts *ProcessingOptions, progressCallback func(int, string, []byte)) ([]string, error)
 }
 
 func NewProcessor(cfg *config.Config) (Processor, error) {

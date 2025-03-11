@@ -63,7 +63,7 @@ func main() {
 		MaxConcurrentTasks: *maxWorkers,
 	}
 
-	if _, err := processor.ProcessTracks(ctx, opts, func(i int, s string) {}); err != nil {
+	if _, err := processor.ProcessTracks(ctx, opts, func(i int, s string, data []byte) {}); err != nil {
 		if err == context.Canceled {
 			slog.Info("Processing was cancelled")
 		} else {

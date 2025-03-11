@@ -452,7 +452,7 @@ func TestUpdateTrackProgress(t *testing.T) {
 	setLength := 10               // Total tracks
 	var capturedProgress int      // To capture the callback's progress value
 	var capturedMessage string    // To capture the callback's message
-	progressCallback := func(progress int, message string) {
+	progressCallback := func(progress int, message string, data []byte) {
 		capturedProgress = progress
 		capturedMessage = message
 	}
@@ -483,7 +483,7 @@ func TestProcessingContext(t *testing.T) {
 	}
 
 	progressCalls := 0
-	progressCallback := func(progress int, message string) {
+	progressCallback := func(progress int, message string, data []byte) {
 		progressCalls++
 	}
 
@@ -504,7 +504,7 @@ func TestProcessingContext(t *testing.T) {
 	assert.Equal(t, filepath.Join(ctx.getTempDir(), "cover.jpg"), ctx.getCoverArtPath(), "Cover art path should be correct")
 
 	// Test the callback
-	ctx.progressCallback(10, "test")
+	ctx.progressCallback(10, "test", nil)
 	assert.Equal(t, 1, progressCalls, "Progress callback should be called")
 }
 
@@ -531,7 +531,7 @@ func TestImportTracklist(t *testing.T) {
 		opts: &ProcessingOptions{
 			TracklistPath: "test_path",
 		},
-		progressCallback: func(progress int, message string) {},
+		progressCallback: func(progress int, message string, data []byte) {},
 	}
 
 	// Test
@@ -555,7 +555,7 @@ func TestDownloadSet(t *testing.T) {
 	// Create a test context
 	ctx := &processingContext{
 		opts:             &ProcessingOptions{},
-		progressCallback: func(int, string) {},
+		progressCallback: func(int, string, []byte) {},
 		set: &domain.Tracklist{
 			Name:   "Test Set",
 			Artist: "Test Artist",
@@ -626,7 +626,7 @@ func TestProcessTracks(t *testing.T) {
 		inputFile:        testFile,
 		extension:        "mp3",
 		outputDir:        outputDir,
-		progressCallback: func(progress int, message string) {},
+		progressCallback: func(progress int, message string, data []byte) {},
 	}
 
 	mockAudioProcessor := new(MockAudioProcessor)
@@ -676,7 +676,7 @@ func TestPrepareForProcessing(t *testing.T) {
 			Artist: "Test Artist",
 		},
 		inputFile:        inputFilePath,
-		progressCallback: func(progress int, message string) {},
+		progressCallback: func(progress int, message string, data []byte) {},
 	}
 
 	mockAudioProcessor := new(MockAudioProcessor)
@@ -705,7 +705,7 @@ func TestEnsureDirectories(t *testing.T) {
 	// Create a test context
 	ctx := &processingContext{
 		opts:             &ProcessingOptions{},
-		progressCallback: func(int, string) {},
+		progressCallback: func(int, string, []byte) {},
 		set:              &domain.Tracklist{},
 	}
 
@@ -754,7 +754,7 @@ func TestProcessTracksCancellation(t *testing.T) {
 	// Start processing in a goroutine
 	resultCh := make(chan error)
 	go func() {
-		_, err := p.ProcessTracks(ctx, opts, func(i int, s string) {
+		_, err := p.ProcessTracks(ctx, opts, func(i int, s string, data []byte) {
 			// Signal when we start processing tracks
 			if s == "Processing 3 tracks" {
 				progressCh <- struct{}{}
@@ -816,7 +816,7 @@ func TestProcessTracksGracefulShutdown(t *testing.T) {
 	}
 
 	// Process tracks
-	_, err := p.ProcessTracks(ctx, opts, func(i int, s string) {})
+	_, err := p.ProcessTracks(ctx, opts, func(i int, s string, data []byte) {})
 
 	// Verify that the operation was cancelled
 	assert.ErrorIs(t, err, context.DeadlineExceeded)

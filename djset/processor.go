@@ -2,6 +2,7 @@ package djset
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -51,7 +52,7 @@ type ProcessingOptions struct {
 // processingContext encapsulates all state and options needed during processing
 type processingContext struct {
 	opts             *ProcessingOptions
-	progressCallback func(int, string)
+	progressCallback func(int, string, []byte)
 	set              *domain.Tracklist
 	setLength        int
 
@@ -62,7 +63,7 @@ type processingContext struct {
 }
 
 // newProcessingContext creates a new processing context with the given options
-func newProcessingContext(opts *ProcessingOptions, progressCallback func(int, string)) *processingContext {
+func newProcessingContext(opts *ProcessingOptions, progressCallback func(int, string, []byte)) *processingContext {
 	return &processingContext{
 		opts:             opts,
 		progressCallback: progressCallback,
@@ -90,7 +91,7 @@ func init() {
 	os.RemoveAll(TempDir)
 }
 
-func (p *processor) ProcessTracks(ctx context.Context, opts *ProcessingOptions, progressCallback func(int, string)) ([]string, error) {
+func (p *processor) ProcessTracks(ctx context.Context, opts *ProcessingOptions, progressCallback func(int, string, []byte)) ([]string, error) {
 	// Setup a processing context
 	procCtx := newProcessingContext(opts, progressCallback)
 
@@ -231,8 +232,13 @@ func (p *processor) importTracklist(ctx *processingContext) error {
 		return fmt.Errorf("failed to create output directory for set: %w", err)
 	}
 
+	jsonData, err := json.Marshal(set)
+	if err != nil {
+		return fmt.Errorf("failed to marshal tracklist: %w", err)
+	}
+
 	// Report progress
-	ctx.progressCallback(10, "Got tracklist")
+	ctx.progressCallback(10, "Got tracklist", jsonData)
 	return nil
 }
 
@@ -274,7 +280,7 @@ func (p *processor) downloadSet(ctx *processingContext) error {
 	// Download the set - we'll let the downloader determine the extension
 	err = p.setDownloader.Download(url, sanitizedSetName, downloadDir, func(progress int, message string) {
 		adjustedProgress := 10 + ((progress * 40) / 100)
-		ctx.progressCallback(adjustedProgress, message)
+		ctx.progressCallback(adjustedProgress, message, nil)
 	})
 	if err != nil {
 		return err
@@ -359,7 +365,7 @@ func (p *processor) splitTracks(
 
 	// Start initial progress
 	slog.Info("Splitting tracks", "count", procCtx.setLength, "extension", opts.FileExtension)
-	procCtx.progressCallback(50, fmt.Sprintf("Processing %d tracks", procCtx.setLength))
+	procCtx.progressCallback(50, fmt.Sprintf("Processing %d tracks", procCtx.setLength), nil)
 
 	// Start track processing with a pool of workers
 	var wg sync.WaitGroup
@@ -436,7 +442,7 @@ func (p *processor) splitTracks(
 	}
 
 	slog.Info("Splitting completed")
-	procCtx.progressCallback(100, "Processing completed")
+	procCtx.progressCallback(100, "Processing completed", nil)
 	return filePaths, nil
 }
 
@@ -594,12 +600,12 @@ func (p *processor) updateTrackProgress(
 	bar *progressbar.ProgressBar,
 	completedTracks *int32,
 	setLength int,
-	progressCallback func(int, string),
+	progressCallback func(int, string, []byte),
 ) {
 	// Increment completed tracks atomically
 	newCount := atomic.AddInt32(completedTracks, 1)
 	trackProgress := int((float64(newCount) / float64(setLength)) * 100)
 	totalProgress := 50 + (trackProgress / 2) // Scale to 50-100%
 	_ = bar.Add(1)
-	progressCallback(totalProgress, fmt.Sprintf("Processed %d/%d tracks", newCount, setLength))
+	progressCallback(totalProgress, fmt.Sprintf("Processed %d/%d tracks", newCount, setLength), nil)
 }
