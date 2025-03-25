@@ -128,7 +128,7 @@ func (p *processor) ProcessTracks(ctx context.Context, opts *ProcessingOptions, 
 	}
 
 	// Step 2: Download set
-	if err := p.downloadSet(procCtx); err != nil {
+	if err := p.downloadSet(ctx, procCtx); err != nil {
 		return nil, err
 	}
 
@@ -242,21 +242,21 @@ func (p *processor) importTracklist(ctx *processingContext) error {
 	return nil
 }
 
-func (p *processor) downloadSet(ctx *processingContext) error {
-	url := ctx.opts.DJSetURL
+func (p *processor) downloadSet(ctx context.Context, procCtx *processingContext) error {
+	url := procCtx.opts.DJSetURL
 	var err error
 
 	if url == "" {
 		// Try to find the URL using the user's search query if available, otherwise use metadata
 		var input string
-		if ctx.opts.TracklistPath != "" && strings.HasPrefix(ctx.opts.TracklistPath, "http") {
+		if procCtx.opts.TracklistPath != "" && strings.HasPrefix(procCtx.opts.TracklistPath, "http") {
 			// If the tracklist path looks like a URL, use it directly
-			input = ctx.opts.TracklistPath
+			input = procCtx.opts.TracklistPath
 		} else {
 			// Otherwise, use the set name and artist
-			input = ctx.set.Name
-			if ctx.set.Artist != "" {
-				input = fmt.Sprintf("%s %s", ctx.set.Artist, input)
+			input = procCtx.set.Name
+			if procCtx.set.Artist != "" {
+				input = fmt.Sprintf("%s %s", procCtx.set.Artist, input)
 			}
 		}
 
@@ -269,8 +269,8 @@ func (p *processor) downloadSet(ctx *processingContext) error {
 	slog.Debug("found match", "url", url)
 
 	// Download the set to the download directory with a predictable name
-	sanitizedSetName := sanitizeTitle(ctx.set.Name)
-	downloadDir := ctx.getDownloadDir()
+	sanitizedSetName := sanitizeTitle(procCtx.set.Name)
+	downloadDir := procCtx.getDownloadDir()
 
 	// Create download directory
 	if err := os.MkdirAll(downloadDir, os.ModePerm); err != nil {
@@ -278,9 +278,9 @@ func (p *processor) downloadSet(ctx *processingContext) error {
 	}
 
 	// Download the set - we'll let the downloader determine the extension
-	err = p.setDownloader.Download(url, sanitizedSetName, downloadDir, func(progress int, message string) {
+	err = p.setDownloader.Download(ctx, url, sanitizedSetName, downloadDir, func(progress int, message string) {
 		adjustedProgress := 10 + ((progress * 40) / 100)
-		ctx.progressCallback(adjustedProgress, message, nil)
+		procCtx.progressCallback(adjustedProgress, message, nil)
 	})
 	if err != nil {
 		return err
@@ -297,16 +297,16 @@ func (p *processor) downloadSet(ctx *processingContext) error {
 	}
 
 	// Use the first file (should be our downloaded set)
-	ctx.inputFile = filepath.Join(downloadDir, files[0].Name())
+	procCtx.inputFile = filepath.Join(downloadDir, files[0].Name())
 
 	// Get the extension from the filename
-	ctx.extension = strings.TrimPrefix(filepath.Ext(ctx.inputFile), ".")
-	if ctx.extension == "" {
+	procCtx.extension = strings.TrimPrefix(filepath.Ext(procCtx.inputFile), ".")
+	if procCtx.extension == "" {
 		// Default to mp3 if no extension
-		ctx.extension = "mp3"
+		procCtx.extension = "mp3"
 	}
 
-	slog.Info("Downloaded set", "file", ctx.inputFile, "extension", ctx.extension)
+	slog.Info("Downloaded set", "file", procCtx.inputFile, "extension", procCtx.extension)
 	return nil
 }
 

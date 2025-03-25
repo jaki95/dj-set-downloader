@@ -1,6 +1,7 @@
 package downloader
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/jaki95/dj-set-downloader/config"
@@ -9,7 +10,7 @@ import (
 // Downloader handles the downloading of DJ sets.
 type Downloader interface {
 	FindURL(trackQuery string) (string, error)
-	Download(trackURL, name string, downloadPath string, progressCallback func(int, string)) error
+	Download(ctx context.Context, trackURL, name string, downloadPath string, progressCallback func(int, string)) error
 }
 
 const (

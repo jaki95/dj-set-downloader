@@ -2,6 +2,7 @@ package downloader
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -71,9 +72,9 @@ func (s *soundCloudClient) FindURL(query string) (string, error) {
 	return firstResult["permalink_url"].(string), nil
 }
 
-func (s *soundCloudClient) Download(trackURL, name string, downloadPath string, progressCallback func(int, string)) error {
+func (s *soundCloudClient) Download(ctx context.Context, trackURL, name string, downloadPath string, progressCallback func(int, string)) error {
 	slog.Debug("downloading set")
-	cmd := exec.Command("scdl", "-l", trackURL, "--name-format", name, "--path", downloadPath)
+	cmd := exec.CommandContext(ctx, "scdl", "-l", trackURL, "--name-format", name, "--path", downloadPath)
 	cmd.Env = append(os.Environ(), "PYTHONUNBUFFERED=1")
 
 	stderr, err := cmd.StderrPipe()
@@ -95,60 +96,93 @@ func (s *soundCloudClient) Download(trackURL, name string, downloadPath string, 
 		return fmt.Errorf("command start error: %w", err)
 	}
 
-	if err := readOutputAndReportProgress(stderr, bar, progressCallback); err != nil {
-		return err
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- readOutputAndReportProgress(ctx, stderr, bar, progressCallback)
+	}()
+
+	select {
+	case <-ctx.Done():
+		// Context was cancelled, kill the process
+		if err := cmd.Cancel(); err != nil {
+			slog.Error("failed to kill process", "error", err)
+		}
+		return ctx.Err()
+	case err := <-errChan:
+		if err != nil {
+			return err
+		}
 	}
 
 	if err := cmd.Wait(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return fmt.Errorf("command wait error: %w", err)
 	}
 
 	return nil
 }
 
-func readOutputAndReportProgress(stderr io.ReadCloser, bar *progressbar.ProgressBar, progressCallback func(int, string)) error {
+func readOutputAndReportProgress(ctx context.Context, stderr io.ReadCloser, bar *progressbar.ProgressBar, progressCallback func(int, string)) error {
 	re := regexp.MustCompile(`(\d+)%`)
 	progressRe := regexp.MustCompile(`\d+%`)
 
 	var lineBuffer bytes.Buffer
 	var lastProgress int
 
-	output := make([]byte, 1)
-	for {
-		_, err := stderr.Read(output)
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return fmt.Errorf("read error: %w", err)
-		}
+	// Create a channel to signal when reading is done
+	done := make(chan struct{})
+	var readErr error
 
-		char := output[0]
-		if char == '\r' || char == '\n' {
-			line := lineBuffer.String()
-			lineBuffer.Reset()
-
-			if !progressRe.MatchString(line) {
-				slog.Debug(line)
-			}
-
-			if matches := re.FindStringSubmatch(line); len(matches) > 1 {
-				progress, _ := strconv.Atoi(matches[1])
-				if progress > lastProgress {
-					_ = bar.Set(progress) // Update terminal progress bar
-					progressCallback(progress, "Downloading set...")
-					lastProgress = progress
+	go func() {
+		defer close(done)
+		output := make([]byte, 1)
+		for {
+			_, err := stderr.Read(output)
+			if err != nil {
+				if err == io.EOF {
+					break
 				}
+				readErr = fmt.Errorf("read error: %w", err)
+				return
 			}
-		} else {
-			lineBuffer.WriteByte(char)
+
+			char := output[0]
+			if char == '\r' || char == '\n' {
+				line := lineBuffer.String()
+				lineBuffer.Reset()
+
+				if !progressRe.MatchString(line) {
+					slog.Debug(line)
+				}
+
+				if matches := re.FindStringSubmatch(line); len(matches) > 1 {
+					progress, _ := strconv.Atoi(matches[1])
+					if progress > lastProgress {
+						_ = bar.Set(progress) // Update terminal progress bar
+						progressCallback(progress, "Downloading set...")
+						lastProgress = progress
+					}
+				}
+			} else {
+				lineBuffer.WriteByte(char)
+			}
 		}
-	}
+	}()
 
-	if lastProgress < 100 {
-		_ = bar.Set(100)
-		progressCallback(100, "Download completed")
+	// Wait for either context cancellation or reading completion
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-done:
+		if readErr != nil {
+			return readErr
+		}
+		if lastProgress < 100 {
+			_ = bar.Set(100)
+			progressCallback(100, "Download completed")
+		}
+		return nil
 	}
-
-	return nil
 }

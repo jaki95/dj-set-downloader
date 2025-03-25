@@ -52,7 +52,7 @@ func (m *MockDownloader) FindURL(trackQuery string) (string, error) {
 	return args.String(0), args.Error(1)
 }
 
-func (m *MockDownloader) Download(trackURL, name string, downloadPath string, progressCallback func(int, string)) error {
+func (m *MockDownloader) Download(ctx context.Context, trackURL, name string, downloadPath string, progressCallback func(int, string)) error {
 	args := m.Called(trackURL, name, downloadPath, progressCallback)
 
 	// Call the progress callback to simulate download progress
@@ -553,7 +553,7 @@ func TestDownloadSet(t *testing.T) {
 	p, _, mockDownloader, _, _ := setupTestProcessor()
 
 	// Create a test context
-	ctx := &processingContext{
+	procCtx := &processingContext{
 		opts:             &ProcessingOptions{},
 		progressCallback: func(int, string, []byte) {},
 		set: &domain.Tracklist{
@@ -575,12 +575,12 @@ func TestDownloadSet(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Test
-	err = p.downloadSet(ctx)
+	err = p.downloadSet(context.Background(), procCtx)
 
 	// Assert
 	assert.NoError(t, err)
-	assert.Equal(t, testFilePath, ctx.inputFile)
-	assert.Equal(t, "mp3", ctx.extension)
+	assert.Equal(t, testFilePath, procCtx.inputFile)
+	assert.Equal(t, "mp3", procCtx.extension)
 
 	// Verify mock expectations
 	mockDownloader.AssertExpectations(t)
