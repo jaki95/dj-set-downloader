@@ -3,7 +3,6 @@ package tracklist
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"math/rand"
 	"net/http"
@@ -20,14 +19,14 @@ import (
 )
 
 type tracklists1001Importer struct {
-	cacheDir         string
-	cacheTTL         time.Duration
-	maxRetries       int
-	baseDelay        time.Duration
-	userAgents       []string
-	cookieFile       string
-	twoCaptchaAPIKey string   // 2Captcha API key
-	proxyURLs        []string // Proxy support retained
+	cacheDir        string
+	cacheTTL        time.Duration
+	maxRetries      int
+	baseDelay       time.Duration
+	userAgents      []string
+	cookieFile      string
+	proxyURLs       []string
+	lastRequestTime time.Time
 }
 
 func New1001TracklistsImporter() *tracklists1001Importer {
@@ -47,9 +46,11 @@ func New1001TracklistsImporter() *tracklists1001Importer {
 			"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 			"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 			"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
+			"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/120.0",
+			"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15",
 		},
-		cookieFile:       "./cookies.json",
-		twoCaptchaAPIKey: apiKey,
+		cookieFile:      "./cookies.json",
+		lastRequestTime: time.Now(),
 	}
 }
 
@@ -84,44 +85,145 @@ func (t *tracklists1001Importer) Import(url string) (*domain.Tracklist, error) {
 }
 
 func (t *tracklists1001Importer) scrapeWithColly(url string) (*domain.Tracklist, error) {
+	slog.Debug("Starting to scrape tracklist", "url", url)
 	var tracklist domain.Tracklist
+
+	// First visit the homepage to get cookies and establish a session
+	homepageCollector := colly.NewCollector(
+		colly.AllowURLRevisit(),
+		colly.MaxDepth(1),
+		colly.UserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
+		colly.AllowedDomains("www.1001tracklists.com", "1001tracklists.com"),
+	)
+
+	// Set up proxy if available
+	var transport *http.Transport
+	if len(t.proxyURLs) > 0 {
+		randProxy := t.proxyURLs[rand.Intn(len(t.proxyURLs))]
+		transport = &http.Transport{
+			Proxy: http.ProxyURL(mustParseURL(randProxy)),
+		}
+		homepageCollector.WithTransport(transport)
+		slog.Debug("Using proxy", "proxy", randProxy)
+	}
+
+	// Configure homepage collector
+	homepageCollector.OnRequest(func(r *colly.Request) {
+		r.Headers.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7")
+		r.Headers.Set("Accept-Language", "en-US,en;q=0.9")
+		r.Headers.Set("Accept-Encoding", "gzip, deflate, br")
+		r.Headers.Set("Connection", "keep-alive")
+		r.Headers.Set("Upgrade-Insecure-Requests", "1")
+		r.Headers.Set("Sec-Fetch-Dest", "document")
+		r.Headers.Set("Sec-Fetch-Mode", "navigate")
+		r.Headers.Set("Sec-Fetch-Site", "none")
+		r.Headers.Set("Sec-Fetch-User", "?1")
+		r.Headers.Set("Cache-Control", "max-age=0")
+		r.Headers.Set("DNT", "1")
+		r.Headers.Set("Sec-Ch-Ua", "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"")
+		r.Headers.Set("Sec-Ch-Ua-Mobile", "?0")
+		r.Headers.Set("Sec-Ch-Ua-Platform", "\"macOS\"")
+	})
+
+	// Visit homepage first
+	slog.Debug("Visiting homepage to establish session")
+	if err := homepageCollector.Visit("https://www.1001tracklists.com"); err != nil {
+		slog.Warn("Failed to visit homepage", "error", err)
+	}
+
+	// Add random delay to simulate human behavior (3-7 seconds)
+	time.Sleep(time.Duration(3000+rand.Intn(4000)) * time.Millisecond)
+
+	// Create a new collector for the actual tracklist page
 	c := colly.NewCollector(
 		colly.AllowURLRevisit(),
 		colly.MaxDepth(1),
-		colly.UserAgent(t.userAgents[rand.Intn(len(t.userAgents))]),
+		colly.UserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
+		colly.AllowedDomains("www.1001tracklists.com", "1001tracklists.com"),
 	)
+
+	// Use the same transport settings if proxy was configured
+	if transport != nil {
+		c.WithTransport(transport)
+	}
 
 	// Set a reasonable timeout
 	c.SetRequestTimeout(30 * time.Second)
 
-	if err := t.loadCookies(c); err != nil {
-		slog.Warn("Failed to load cookies", "error", err)
-	}
-
-	if len(t.proxyURLs) > 0 {
-		randProxy := t.proxyURLs[rand.Intn(len(t.proxyURLs))]
-		c.WithTransport(&http.Transport{
-			Proxy: http.ProxyURL(mustParseURL(randProxy)),
-		})
-	}
-
+	// Add CloudFlare bypass headers
 	c.OnRequest(func(r *colly.Request) {
-		r.Headers.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
-		r.Headers.Set("Accept-Language", "en-US,en;q=0.5")
+		slog.Debug("Making request", "url", r.URL.String(), "method", r.Method)
+
+		// Calculate time since last request
+		timeSinceLast := time.Since(t.lastRequestTime)
+		// Add random delay between 3-7 seconds with microsecond precision
+		delay := time.Duration(3000+rand.Intn(4000)) * time.Millisecond
+		if timeSinceLast < delay {
+			slog.Debug("Adding delay between requests", "delay", delay-timeSinceLast)
+			time.Sleep(delay - timeSinceLast)
+		}
+		t.lastRequestTime = time.Now()
+
+		// Set realistic browser headers
+		r.Headers.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7")
+		r.Headers.Set("Accept-Language", "en-US,en;q=0.9")
+		r.Headers.Set("Accept-Encoding", "gzip, deflate, br")
 		r.Headers.Set("Connection", "keep-alive")
 		r.Headers.Set("Upgrade-Insecure-Requests", "1")
-		r.Headers.Set("Referer", "https://www.1001tracklists.com/")
+		r.Headers.Set("Sec-Fetch-Dest", "document")
+		r.Headers.Set("Sec-Fetch-Mode", "navigate")
+		r.Headers.Set("Sec-Fetch-Site", "same-origin")
+		r.Headers.Set("Sec-Fetch-User", "?1")
 		r.Headers.Set("Cache-Control", "max-age=0")
+		r.Headers.Set("DNT", "1")
+		r.Headers.Set("Sec-Ch-Ua", "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"")
+		r.Headers.Set("Sec-Ch-Ua-Mobile", "?0")
+		r.Headers.Set("Sec-Ch-Ua-Platform", "\"macOS\"")
+		r.Headers.Set("Referer", "https://www.1001tracklists.com/")
+
+		// Add cookies from file
+		if err := t.loadCookies(c); err != nil {
+			slog.Warn("Failed to load cookies", "error", err)
+		} else {
+			slog.Debug("Successfully loaded cookies")
+		}
+
+		// Copy cookies from homepage collector
+		for _, cookie := range homepageCollector.Cookies(r.URL.String()) {
+			r.Headers.Set("Cookie", cookie.String())
+		}
 	})
 
 	c.OnResponse(func(r *colly.Response) {
-		// Check if response contains "captcha" in the body
-		if strings.Contains(string(r.Body), "captcha") {
-			slog.Info("CAPTCHA detected in response")
-		}
-		// Save cookies for future use
+		slog.Debug("Received response", "url", r.Request.URL.String(), "status", r.StatusCode)
+
+		// Save cookies after each response
 		if err := t.saveCookies(c); err != nil {
-			slog.Warn("Warning: failed to save cookies", "error", err)
+			slog.Warn("Failed to save cookies", "error", err)
+		} else {
+			slog.Debug("Successfully saved cookies")
+		}
+
+		// Check for various bot detection indicators
+		bodyText := string(r.Body)
+		if strings.Contains(bodyText, "captcha") ||
+			strings.Contains(bodyText, "security check") ||
+			strings.Contains(bodyText, "verify you are human") ||
+			strings.Contains(bodyText, "robot") ||
+			strings.Contains(bodyText, "access denied") ||
+			strings.Contains(bodyText, "blocked") {
+			slog.Warn("Bot detection triggered", "url", r.Request.URL.String())
+
+			// Add additional delay when bot detection is triggered (7-15 seconds)
+			delay := time.Duration(7000+rand.Intn(8000)) * time.Millisecond
+			slog.Debug("Adding delay after bot detection", "delay", delay)
+			time.Sleep(delay)
+		}
+
+		// Check for CloudFlare specific headers in response
+		cfRay := r.Headers.Get("CF-RAY")
+		if cfRay != "" {
+			slog.Debug("CloudFlare Ray ID", "ray", cfRay)
 		}
 	})
 
@@ -135,37 +237,13 @@ func (t *tracklists1001Importer) scrapeWithColly(url string) (*domain.Tracklist,
 			if strings.HasPrefix(imgSrc, "data:png;base64,") && cSalt != "" {
 				slog.Info("CAPTCHA detected", "salt", cSalt)
 
-				if t.twoCaptchaAPIKey == "" {
-					slog.Error("Cannot solve CAPTCHA: API key not provided")
-					return
-				}
-
-				base64Image := strings.TrimPrefix(imgSrc, "data:png;base64,")
-				solution, err := t.solveImageCaptcha(base64Image)
-				if err != nil {
-					slog.Error("Failed to solve CAPTCHA", "error", err)
-					return
-				}
-
-				// Submit CAPTCHA solution via POST
-				slog.Info("Submitting CAPTCHA solution", "solution", solution)
-
-				err = e.Request.Post(url, map[string]string{
-					"captcha": solution,
-					"cSalt":   cSalt,
-				})
-
-				if err != nil {
-					slog.Error("Failed to submit CAPTCHA solution", "error", err)
-					return
-				}
-				slog.Info("CAPTCHA solution submitted, waiting for response")
 			}
 		}
 	})
 
 	trackCounter := 1
 	c.OnHTML("div.tlpTog", func(e *colly.HTMLElement) {
+		slog.Debug("Found track element", "trackNumber", trackCounter)
 		startTime := strings.TrimSpace(e.ChildText("div.cue.noWrap.action.mt5"))
 		if startTime == "" {
 			startTime = "00:00"
@@ -173,6 +251,7 @@ func (t *tracklists1001Importer) scrapeWithColly(url string) (*domain.Tracklist,
 
 		trackValue := strings.TrimSpace(e.ChildText("span.trackValue"))
 		artist, title := parseTrackValue(trackValue)
+		slog.Debug("Parsed track", "artist", artist, "title", title, "startTime", startTime)
 
 		track := &domain.Track{
 			Artist:      artist,
@@ -207,33 +286,6 @@ func (t *tracklists1001Importer) scrapeWithColly(url string) (*domain.Tracklist,
 	c.OnHTML("noscript", func(e *colly.HTMLElement) {
 		if strings.Contains(e.Text, "Please enable JavaScript") {
 			slog.Warn("Website requires JavaScript to be enabled")
-		}
-	})
-
-	// Add more extensive CAPTCHA detection logging
-	c.OnResponse(func(r *colly.Response) {
-		bodyText := string(r.Body)
-
-		// Log more detailed information about potential CAPTCHA detection
-		if strings.Contains(bodyText, "captcha") {
-			slog.Info("CAPTCHA keyword detected in response body")
-
-			// Save the HTML for inspection if needed
-			if err := os.WriteFile("captcha_debug.html", r.Body, 0644); err != nil {
-				slog.Warn("Warning: failed to write captcha debug file", "error", err)
-			}
-		}
-
-		// Check for other potential CAPTCHA indicators
-		if strings.Contains(bodyText, "security check") ||
-			strings.Contains(bodyText, "verify you are human") ||
-			strings.Contains(bodyText, "robot") {
-			slog.Info("Possible CAPTCHA/security check detected through keywords")
-		}
-
-		// Save cookies for future use
-		if err := t.saveCookies(c); err != nil {
-			slog.Warn("Warning: failed to save cookies", "error", err)
 		}
 	})
 
@@ -272,103 +324,11 @@ func (t *tracklists1001Importer) scrapeWithColly(url string) (*domain.Tracklist,
 		if len(tracklist.Tracks) > 0 {
 			tracklist.Tracks[len(tracklist.Tracks)-1].EndTime = ""
 		}
+		slog.Debug("Tracklist", "tracklist", tracklist.Tracks)
 		slog.Info("Successfully scraped tracklist", "trackCount", len(tracklist.Tracks))
 	}
 
 	return &tracklist, nil
-}
-
-// solveImageCaptcha submits an image CAPTCHA to 2Captcha and retrieves the solution
-func (t *tracklists1001Importer) solveImageCaptcha(base64Image string) (string, error) {
-	if t.twoCaptchaAPIKey == "" {
-		return "", fmt.Errorf("2Captcha API key not provided")
-	}
-
-	client := &http.Client{Timeout: 60 * time.Second}
-
-	// Step 1: Submit CAPTCHA image
-	reqURL := "https://2captcha.com/in.php"
-	data := url.Values{
-		"key":    {t.twoCaptchaAPIKey},
-		"method": {"base64"},
-		"body":   {base64Image},
-		"json":   {"1"},
-	}
-	resp, err := client.PostForm(reqURL, data)
-	if err != nil {
-		return "", fmt.Errorf("failed to submit CAPTCHA: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	// Parse JSON response
-	var submitResp struct {
-		Status  int    `json:"status"`
-		Request string `json:"request"`
-		Error   string `json:"error"`
-	}
-
-	if err := json.Unmarshal(body, &submitResp); err != nil {
-		return "", fmt.Errorf("failed to parse 2Captcha response: %w", err)
-	}
-
-	if submitResp.Status != 1 {
-		return "", fmt.Errorf("2Captcha submission failed: %s", submitResp.Error)
-	}
-
-	captchaID := submitResp.Request
-
-	// Step 2: Poll for solution with exponential backoff
-	maxAttempts := 20
-	baseWait := 5 * time.Second
-
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		waitTime := baseWait + time.Duration(attempt)*time.Second
-		slog.Info("Waiting for CAPTCHA solution", "attempt", attempt+1, "wait", waitTime)
-		time.Sleep(waitTime)
-
-		pollURL := fmt.Sprintf("https://2captcha.com/res.php?key=%s&action=get&id=%s&json=1",
-			t.twoCaptchaAPIKey, captchaID)
-
-		resp, err = client.Get(pollURL)
-		if err != nil {
-			slog.Warn("Failed to poll CAPTCHA solution", "error", err)
-			continue
-		}
-
-		body, err = io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			slog.Warn("Failed to read response", "error", err)
-			continue
-		}
-
-		var pollResp struct {
-			Status  int    `json:"status"`
-			Request string `json:"request"`
-			Error   string `json:"error"`
-		}
-
-		if err := json.Unmarshal(body, &pollResp); err != nil {
-			slog.Warn("Failed to parse response", "error", err)
-			continue
-		}
-
-		if pollResp.Status == 1 {
-			slog.Info("CAPTCHA solved successfully")
-			return pollResp.Request, nil
-		}
-
-		if pollResp.Error != "CAPCHA_NOT_READY" {
-			return "", fmt.Errorf("2Captcha error: %s", pollResp.Error)
-		}
-	}
-
-	return "", fmt.Errorf("CAPTCHA solution timed out after %d attempts", maxAttempts)
 }
 
 func (t *tracklists1001Importer) loadCookies(c *colly.Collector) error {
