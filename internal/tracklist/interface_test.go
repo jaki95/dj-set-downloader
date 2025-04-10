@@ -1,7 +1,9 @@
 package tracklist
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/jaki95/dj-set-downloader/config"
@@ -16,14 +18,36 @@ type MockImporter struct {
 	err        error
 }
 
-func (m *MockImporter) Import(source string) (*domain.Tracklist, error) {
+func (m *MockImporter) Import(ctx context.Context, source string) (*domain.Tracklist, error) {
 	if m.shouldFail {
 		return nil, m.err
 	}
 	return m.tracklist, nil
 }
 
+func setupTestEnv() func() {
+	// Save original environment variables
+	originalAPIKey := os.Getenv("GOOGLE_API_KEY")
+	original1001ID := os.Getenv("GOOGLE_SEARCH_ID_1001TRACKLISTS")
+	originalSCID := os.Getenv("GOOGLE_SEARCH_ID_SOUNDCLOUD")
+
+	// Set test environment variables
+	os.Setenv("GOOGLE_API_KEY", "test-api-key")
+	os.Setenv("GOOGLE_SEARCH_ID_1001TRACKLISTS", "test-1001tracklists-id")
+	os.Setenv("GOOGLE_SEARCH_ID_SOUNDCLOUD", "test-soundcloud-id")
+
+	// Return cleanup function
+	return func() {
+		os.Setenv("GOOGLE_API_KEY", originalAPIKey)
+		os.Setenv("GOOGLE_SEARCH_ID_1001TRACKLISTS", original1001ID)
+		os.Setenv("GOOGLE_SEARCH_ID_SOUNDCLOUD", originalSCID)
+	}
+}
+
 func TestNewImporter(t *testing.T) {
+	cleanup := setupTestEnv()
+	defer cleanup()
+
 	tests := []struct {
 		name           string
 		config         *config.Config
@@ -33,7 +57,7 @@ func TestNewImporter(t *testing.T) {
 		{
 			name: "any config",
 			config: &config.Config{
-				TracklistSource: Source1001Tracklists, // This doesn't matter anymore
+				TracklistSource: Source1001Tracklists,
 			},
 			expectedType:   "*tracklist.CompositeImporter",
 			expectedErrMsg: "",
@@ -58,7 +82,11 @@ func TestNewImporter(t *testing.T) {
 }
 
 func TestCompositeImporter(t *testing.T) {
-	importer := NewCompositeImporter()
+	cleanup := setupTestEnv()
+	defer cleanup()
+
+	importer, err := NewCompositeImporter()
+	assert.NoError(t, err)
 	assert.NotNil(t, importer)
 	assert.Equal(t, 3, len(importer.importers))
 	assert.Equal(t, "*tracklist.tracklists1001Importer", getTypeName(importer.importers[0]))
@@ -136,7 +164,7 @@ func TestCompositeImporterFallback(t *testing.T) {
 				importers: tt.importers,
 			}
 
-			result, err := composite.Import("test-source")
+			result, err := composite.Import(context.Background(), "test-source")
 
 			if tt.expectError {
 				assert.Error(t, err)

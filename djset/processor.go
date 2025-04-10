@@ -43,7 +43,7 @@ func New(tracklistImporter tracklist.Importer, setDownloader downloader.Download
 }
 
 type ProcessingOptions struct {
-	TracklistPath      string
+	Query              string // Search query for the tracklist
 	DJSetURL           string
 	FileExtension      string
 	MaxConcurrentTasks int
@@ -216,7 +216,7 @@ func isDirEmpty(dir string) (bool, error) {
 }
 
 func (p *processor) importTracklist(ctx *processingContext) error {
-	set, err := p.tracklistImporter.Import(ctx.opts.TracklistPath)
+	set, err := p.tracklistImporter.Import(context.Background(), ctx.opts.Query)
 	if err != nil {
 		return err
 	}
@@ -249,9 +249,9 @@ func (p *processor) downloadSet(ctx context.Context, procCtx *processingContext)
 	if url == "" {
 		// Try to find the URL using the user's search query if available, otherwise use metadata
 		var input string
-		if procCtx.opts.TracklistPath != "" && strings.HasPrefix(procCtx.opts.TracklistPath, "http") {
-			// If the tracklist path looks like a URL, use it directly
-			input = procCtx.opts.TracklistPath
+		if procCtx.opts.Query != "" && strings.HasPrefix(procCtx.opts.Query, "http") {
+			// If the query looks like a URL, use it directly
+			input = procCtx.opts.Query
 		} else {
 			// Otherwise, use the set name and artist
 			input = procCtx.set.Name
@@ -261,7 +261,7 @@ func (p *processor) downloadSet(ctx context.Context, procCtx *processingContext)
 		}
 
 		input = strings.TrimSpace(input)
-		url, err = p.setDownloader.FindURL(input)
+		url, err = p.setDownloader.FindURL(ctx, input)
 		if err != nil {
 			return err
 		}

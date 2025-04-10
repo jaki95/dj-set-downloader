@@ -3,24 +3,24 @@ package downloader
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
+	"strings"
 
+	"github.com/jaki95/dj-set-downloader/internal/google"
 	"github.com/k0kubun/go-ansi"
 	"github.com/schollz/progressbar/v3"
 )
 
 type soundCloudClient struct {
-	baseURL  string
-	clientID string
+	baseURL      string
+	clientID     string
+	googleClient *google.GoogleClient
 }
 
 func NewSoundCloudDownloader() (*soundCloudClient, error) {
@@ -28,48 +28,47 @@ func NewSoundCloudDownloader() (*soundCloudClient, error) {
 	if clientID == "" {
 		return nil, fmt.Errorf("SOUNDCLOUD_CLIENT_ID not set")
 	}
+
+	googleClient, err := google.NewGoogleClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Google client: %w", err)
+	}
+
 	return &soundCloudClient{
-		baseURL:  "https://api-v2.soundcloud.com",
-		clientID: clientID,
+		baseURL:      "https://api-v2.soundcloud.com",
+		clientID:     clientID,
+		googleClient: googleClient,
 	}, nil
 }
 
-func (s *soundCloudClient) FindURL(query string) (string, error) {
+func (s *soundCloudClient) FindURL(ctx context.Context, query string) (string, error) {
 	if query == "" {
 		return "", fmt.Errorf("invalid query")
 	}
 	slog.Debug("searching soundcloud for set", "query", query)
-	encodedQuery := url.QueryEscape(query)
-	res, err := http.Get(fmt.Sprintf("%s/search?q=%s&client_id=%s", s.baseURL, encodedQuery, s.clientID))
+
+	// Create a more specific search query for SoundCloud
+	soundcloudQuery := fmt.Sprintf("site:soundcloud.com %s", query)
+
+	// Search using Google with site-specific search engine
+	results, err := s.googleClient.Search(ctx, soundcloudQuery, "soundcloud")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to search for track: %w", err)
 	}
 
-	if res.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("error: %d", res.StatusCode)
-	}
-
-	resBody, err := io.ReadAll(res.Body)
-	if err != nil {
-		return "", err
-	}
-
-	var response interface{}
-
-	err = json.Unmarshal(resBody, &response)
-	if err != nil {
-		return "", err
-	}
-
-	responseList := response.(map[string]any)["collection"].([]interface{})
-
-	if len(responseList) == 0 {
+	if len(results) == 0 {
 		return "", fmt.Errorf("no results in search")
 	}
 
-	firstResult := responseList[0].(map[string]any)
+	// Find the first valid SoundCloud URL
+	for _, result := range results {
+		if strings.Contains(result.Link, "soundcloud.com") {
+			slog.Debug("Found SoundCloud URL", "url", result.Link)
+			return result.Link, nil
+		}
+	}
 
-	return firstResult["permalink_url"].(string), nil
+	return "", fmt.Errorf("no SoundCloud results found for query: %s", query)
 }
 
 func (s *soundCloudClient) Download(ctx context.Context, trackURL, name string, downloadPath string, progressCallback func(int, string)) error {

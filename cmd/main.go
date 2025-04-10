@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	tracklistURL := flag.String("tracklist-url", "", "URL to the tracklist source (required)")
+	query := flag.String("query", "", "Search query for the tracklist (e.g. 'Martin Garrix Ultra Miami 2023')")
 	soundcloudURL := flag.String("soundcloud-url", "", "URL of the SoundCloud DJ set (optional)")
 	maxWorkers := flag.Int("workers", 4, "Maximum concurrent processing tasks")
 
@@ -23,8 +23,8 @@ func main() {
 	}
 	flag.Parse()
 
-	if *tracklistURL == "" {
-		slog.Error("Missing required flag: -tracklist-url")
+	if *query == "" {
+		slog.Error("Missing required flag: -query")
 		return
 	}
 
@@ -57,7 +57,7 @@ func main() {
 	}()
 
 	opts := &djset.ProcessingOptions{
-		TracklistPath:      *tracklistURL,
+		Query:              *query,
 		DJSetURL:           *soundcloudURL,
 		FileExtension:      cfg.FileExtension,
 		MaxConcurrentTasks: *maxWorkers,

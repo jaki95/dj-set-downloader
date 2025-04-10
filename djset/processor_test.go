@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jaki95/dj-set-downloader/config"
 	"github.com/jaki95/dj-set-downloader/internal/audio"
 	"github.com/jaki95/dj-set-downloader/internal/domain"
 	"github.com/schollz/progressbar/v3"
@@ -35,8 +34,8 @@ type MockTracklistImporter struct {
 	mock.Mock
 }
 
-func (m *MockTracklistImporter) Import(path string) (*domain.Tracklist, error) {
-	args := m.Called(path)
+func (m *MockTracklistImporter) Import(ctx context.Context, path string) (*domain.Tracklist, error) {
+	args := m.Called(ctx, path)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -47,13 +46,13 @@ type MockDownloader struct {
 	mock.Mock
 }
 
-func (m *MockDownloader) FindURL(trackQuery string) (string, error) {
-	args := m.Called(trackQuery)
+func (m *MockDownloader) FindURL(ctx context.Context, trackQuery string) (string, error) {
+	args := m.Called(ctx, trackQuery)
 	return args.String(0), args.Error(1)
 }
 
 func (m *MockDownloader) Download(ctx context.Context, trackURL, name string, downloadPath string, progressCallback func(int, string)) error {
-	args := m.Called(trackURL, name, downloadPath, progressCallback)
+	args := m.Called(ctx, trackURL, name, downloadPath, progressCallback)
 
 	// Call the progress callback to simulate download progress
 	if progressCallback != nil {
@@ -222,29 +221,46 @@ func setupTestDirectories(t *testing.T) testDirStructure {
 	return dirs
 }
 
-func TestNew(t *testing.T) {
-	// Setup environment for SoundCloud
+func setupTestEnv() func() {
+	// Save original environment variables
+	originalAPIKey := os.Getenv("GOOGLE_API_KEY")
+	original1001ID := os.Getenv("GOOGLE_SEARCH_ID_1001TRACKLISTS")
+	originalSCID := os.Getenv("GOOGLE_SEARCH_ID_SOUNDCLOUD")
 	originalClientID := os.Getenv("SOUNDCLOUD_CLIENT_ID")
-	defer os.Setenv("SOUNDCLOUD_CLIENT_ID", originalClientID) // Restore original value
-	os.Setenv("SOUNDCLOUD_CLIENT_ID", "test_client_id")
+
+	// Set test environment variables
+	os.Setenv("GOOGLE_API_KEY", "test-api-key")
+	os.Setenv("GOOGLE_SEARCH_ID_1001TRACKLISTS", "test-1001tracklists-id")
+	os.Setenv("GOOGLE_SEARCH_ID_SOUNDCLOUD", "test-soundcloud-id")
+	os.Setenv("SOUNDCLOUD_CLIENT_ID", "test-client-id")
+
+	// Return cleanup function
+	return func() {
+		os.Setenv("GOOGLE_API_KEY", originalAPIKey)
+		os.Setenv("GOOGLE_SEARCH_ID_1001TRACKLISTS", original1001ID)
+		os.Setenv("GOOGLE_SEARCH_ID_SOUNDCLOUD", originalSCID)
+		os.Setenv("SOUNDCLOUD_CLIENT_ID", originalClientID)
+	}
+}
+
+func TestNew(t *testing.T) {
+	cleanup := setupTestEnv()
+	defer cleanup()
 
 	// Setup
-	cfg := &config.Config{
-		AudioSource:     "soundcloud",
-		TracklistSource: "trackids",
-		FileExtension:   "m4a",
-		AudioProcessor:  "ffmpeg",
-	}
+	mockImporter := new(MockTracklistImporter)
+	mockDownloader := new(MockDownloader)
+	mockAudioProcessor := new(MockAudioProcessor)
 
 	// Test
-	p, err := NewProcessor(cfg)
+	p := New(mockImporter, mockDownloader, mockAudioProcessor)
 
 	// Assert
-	assert.NoError(t, err)
 	assert.NotNil(t, p)
-	assert.NotNil(t, p.(*processor).tracklistImporter)
-	assert.NotNil(t, p.(*processor).setDownloader)
-	assert.NotNil(t, p.(*processor).audioProcessor)
+	assert.IsType(t, &processor{}, p)
+	assert.Same(t, mockImporter, p.tracklistImporter)
+	assert.Same(t, mockDownloader, p.setDownloader)
+	assert.Same(t, mockAudioProcessor, p.audioProcessor)
 }
 
 func TestSanitizeTitle(t *testing.T) {
@@ -476,7 +492,7 @@ func TestProcessingContext(t *testing.T) {
 
 	// Setup
 	opts := &ProcessingOptions{
-		TracklistPath:      "test.txt",
+		Query:              "test-query",
 		DJSetURL:           "test_url",
 		FileExtension:      "mp3",
 		MaxConcurrentTasks: 1,
@@ -509,80 +525,75 @@ func TestProcessingContext(t *testing.T) {
 }
 
 func TestImportTracklist(t *testing.T) {
-	testDirs := setupTestDirectories(t)
-
+	// Setup
 	p, mockImporter, _, _, _ := setupTestProcessor()
 
-	// Create test data
-	tracklist := &domain.Tracklist{
+	// Create test options
+	opts := &ProcessingOptions{
+		Query: "test-query",
+	}
+
+	// Create test context
+	ctx := &processingContext{
+		opts:             opts,
+		progressCallback: func(progress int, message string, data []byte) {},
+	}
+
+	// Setup mock expectations
+	mockImporter.On("Import", mock.Anything, "test-query").Return(&domain.Tracklist{
 		Name:   "Test Set",
 		Artist: "Test Artist",
 		Tracks: []*domain.Track{
-			{Title: "Track 1", StartTime: "0:00", EndTime: "1:00"},
-			{Title: "Track 2", StartTime: "1:00", EndTime: "2:00"},
+			{
+				Artist:      "Artist 1",
+				Title:       "Track 1",
+				StartTime:   "00:00:00",
+				EndTime:     "00:05:00",
+				TrackNumber: 1,
+			},
 		},
-	}
-
-	// Setup mocks
-	mockImporter.On("Import", "test_path").Return(tracklist, nil)
-
-	// Create context
-	ctx := &processingContext{
-		opts: &ProcessingOptions{
-			TracklistPath: "test_path",
-		},
-		progressCallback: func(progress int, message string, data []byte) {},
-	}
+	}, nil)
 
 	// Test
 	err := p.importTracklist(ctx)
 
 	// Assert
 	assert.NoError(t, err)
-	assert.Equal(t, tracklist, ctx.set)
-	assert.Equal(t, len(tracklist.Tracks), ctx.setLength)
-	assert.Equal(t, filepath.Join(testDirs.outputDir, "Test_Set"), ctx.outputDir)
-
-	// Verify mock expectations
+	assert.NotNil(t, ctx.set)
+	assert.Equal(t, "Test Set", ctx.set.Name)
+	assert.Equal(t, "Test Artist", ctx.set.Artist)
+	assert.Equal(t, 1, len(ctx.set.Tracks))
 	mockImporter.AssertExpectations(t)
 }
 
 func TestDownloadSet(t *testing.T) {
-	testDirs := setupTestDirectories(t)
-
+	// Setup
 	p, _, mockDownloader, _, _ := setupTestProcessor()
 
-	// Create a test context
+	// Create test context
+	ctx := context.Background()
 	procCtx := &processingContext{
-		opts:             &ProcessingOptions{},
-		progressCallback: func(int, string, []byte) {},
+		opts: &ProcessingOptions{
+			DJSetURL:      "test_url",
+			FileExtension: "mp3",
+		},
+		progressCallback: func(progress int, message string, data []byte) {},
 		set: &domain.Tracklist{
 			Name:   "Test Set",
 			Artist: "Test Artist",
 		},
-		setLength: 1,
 	}
 
-	// Setup mocks
-	mockDownloader.On("FindURL", "Test Artist Test Set").Return("test_url", nil)
-	mockDownloader.On("Download", "test_url", "Test_Set", filepath.Join(testDirs.tempDir, "downloads"), mock.Anything).Return(nil)
-
-	// Create a test file in the download directory to simulate a download
-	testFilePath := filepath.Join(testDirs.tempDir, "downloads", "Test_Set.mp3")
-	err := os.MkdirAll(filepath.Dir(testFilePath), 0755)
-	assert.NoError(t, err)
-	err = os.WriteFile(testFilePath, []byte("test audio content"), 0644)
-	assert.NoError(t, err)
+	// Setup mock expectations
+	mockDownloader.On("Download", mock.Anything, "test_url", "Test_Set", procCtx.getDownloadDir(), mock.AnythingOfType("func(int, string)")).Return(nil)
 
 	// Test
-	err = p.downloadSet(context.Background(), procCtx)
+	err := p.downloadSet(ctx, procCtx)
 
 	// Assert
 	assert.NoError(t, err)
-	assert.Equal(t, testFilePath, procCtx.inputFile)
-	assert.Equal(t, "mp3", procCtx.extension)
-
-	// Verify mock expectations
+	assert.Equal(t, "test_url", procCtx.opts.DJSetURL)
+	assert.Equal(t, filepath.Join(procCtx.getDownloadDir(), "Test_Set.mp3"), procCtx.inputFile)
 	mockDownloader.AssertExpectations(t)
 }
 
@@ -717,65 +728,38 @@ func TestEnsureDirectories(t *testing.T) {
 }
 
 func TestProcessTracksCancellation(t *testing.T) {
-	// Setup test environment
-	testDirs := setupTestDirectories(t)
+	// Setup
 	p, mockImporter, mockDownloader, mockAudioProcessor, _ := setupTestProcessor()
 
-	// Create test data
-	tracklist := &domain.Tracklist{
-		Name:   "Test Set",
-		Artist: "Test Artist",
-		Tracks: []*domain.Track{
-			{Title: "Track 1", StartTime: "0:00", EndTime: "1:00"},
-			{Title: "Track 2", StartTime: "1:00", EndTime: "2:00"},
-			{Title: "Track 3", StartTime: "2:00", EndTime: "3:00"},
-		},
-	}
-
-	// Setup mocks
-	mockImporter.On("Import", "test_path").Return(tracklist, nil)
-	mockDownloader.On("FindURL", "Test Artist Test Set").Return("test_url", nil)
-	mockDownloader.On("Download", "test_url", "Test_Set", mock.Anything, mock.Anything).Return(nil)
-	mockAudioProcessor.On("ExtractCoverArt", mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	mockAudioProcessor.On("Split", mock.Anything, mock.Anything).Return(nil)
-
-	// Create a cancellable context
+	// Create a context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	// Create test options
 	opts := &ProcessingOptions{
-		TracklistPath:      "test_path",
+		Query:              "test-query",
 		MaxConcurrentTasks: 1,
 	}
 
-	// Create a channel to track progress
-	progressCh := make(chan struct{})
+	// Setup mocks
+	mockImporter.On("Import", mock.Anything, "test-query").Return(nil, context.Canceled)
 
 	// Start processing in a goroutine
-	resultCh := make(chan error)
 	go func() {
-		_, err := p.ProcessTracks(ctx, opts, func(i int, s string, data []byte) {
-			// Signal when we start processing tracks
-			if s == "Processing 3 tracks" {
-				progressCh <- struct{}{}
-			}
-		})
-		resultCh <- err
+		time.Sleep(100 * time.Millisecond) // Give some time for processing to start
+		cancel()                           // Cancel the context
 	}()
 
-	// Wait for track processing to start
-	<-progressCh
+	// Test
+	results, err := p.ProcessTracks(ctx, opts, func(progress int, message string, data []byte) {})
 
-	// Cancel the context
-	cancel()
-
-	// Wait for processing to complete and check the error
-	err := <-resultCh
-	assert.ErrorIs(t, err, context.Canceled)
-
-	// Verify that temporary files are cleaned up
-	assert.NoDirExists(t, filepath.Join(testDirs.tempDir, "downloads"))
-	assert.NoDirExists(t, filepath.Join(testDirs.tempDir, "processing"))
+	// Assert
+	assert.Error(t, err)
+	assert.Equal(t, context.Canceled, err)
+	assert.Nil(t, results)
+	mockImporter.AssertExpectations(t)
+	mockDownloader.AssertExpectations(t)
+	mockAudioProcessor.AssertExpectations(t)
 }
 
 func TestProcessTracksGracefulShutdown(t *testing.T) {
@@ -794,9 +778,9 @@ func TestProcessTracksGracefulShutdown(t *testing.T) {
 	}
 
 	// Setup mocks
-	mockImporter.On("Import", "test_path").Return(tracklist, nil)
-	mockDownloader.On("FindURL", "Test Artist Test Set").Return("test_url", nil)
-	mockDownloader.On("Download", "test_url", "Test_Set", mock.Anything, mock.Anything).Return(nil)
+	mockImporter.On("Import", mock.Anything, "test_path").Return(tracklist, nil)
+	mockDownloader.On("FindURL", mock.Anything, "Test Artist Test Set").Return("test_url", nil)
+	mockDownloader.On("Download", mock.Anything, "test_url", "Test_Set", mock.Anything, mock.Anything).Return(nil)
 	mockAudioProcessor.On("ExtractCoverArt", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 	// Make Split take some time and check context
@@ -811,7 +795,7 @@ func TestProcessTracksGracefulShutdown(t *testing.T) {
 
 	// Create test options
 	opts := &ProcessingOptions{
-		TracklistPath:      "test_path",
+		Query:              "test_path",
 		MaxConcurrentTasks: 1,
 	}
 

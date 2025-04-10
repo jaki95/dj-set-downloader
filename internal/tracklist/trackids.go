@@ -1,6 +1,7 @@
 package tracklist
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -54,13 +55,19 @@ func NewTrackIDParser() *TrackIDParser {
 	}
 }
 
-func (t *TrackIDParser) Import(keywords string) (*domain.Tracklist, error) {
-	slug, err := t.findSlug(keywords)
+func (t *TrackIDParser) Import(ctx context.Context, keywords string) (*domain.Tracklist, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
+	slug, err := t.findSlug(ctx, keywords)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := t.fetchTrackData(slug)
+	resp, err := t.fetchTrackData(ctx, slug)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +84,13 @@ func (t *TrackIDParser) Import(keywords string) (*domain.Tracklist, error) {
 	return tracklist, nil
 }
 
-func (t *TrackIDParser) findSlug(keywords string) (string, error) {
+func (t *TrackIDParser) findSlug(ctx context.Context, keywords string) (string, error) {
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	default:
+	}
+
 	params := url.Values{}
 	params.Add("keywords", keywords)
 	params.Add("pageSize", "20")
@@ -85,7 +98,7 @@ func (t *TrackIDParser) findSlug(keywords string) (string, error) {
 	params.Add("status", "3")
 
 	url := t.searchURL + "?" + params.Encode()
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create search request: %w", err)
 	}
@@ -122,9 +135,15 @@ func (t *TrackIDParser) findSlug(keywords string) (string, error) {
 	return slug, nil
 }
 
-func (t *TrackIDParser) fetchTrackData(slug string) (*TrackIDResponse, error) {
+func (t *TrackIDParser) fetchTrackData(ctx context.Context, slug string) (*TrackIDResponse, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	url := t.baseURL + slug
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

@@ -1,17 +1,37 @@
 package downloader
 
 import (
+	"context"
 	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNewSoundCloudDownloaderWithoutClientID(t *testing.T) {
-	// Ensure SOUNDCLOUD_CLIENT_ID is not set
+func setupTestEnv() func() {
+	// Save original environment variables
+	originalAPIKey := os.Getenv("GOOGLE_API_KEY")
+	originalSCID := os.Getenv("GOOGLE_SEARCH_ID_SOUNDCLOUD")
 	originalClientID := os.Getenv("SOUNDCLOUD_CLIENT_ID")
-	defer os.Setenv("SOUNDCLOUD_CLIENT_ID", originalClientID) // Restore original value
 
+	// Set test environment variables
+	os.Setenv("GOOGLE_API_KEY", "test-api-key")
+	os.Setenv("GOOGLE_SEARCH_ID_SOUNDCLOUD", "test-soundcloud-id")
+	os.Setenv("SOUNDCLOUD_CLIENT_ID", "test-client-id")
+
+	// Return cleanup function
+	return func() {
+		os.Setenv("GOOGLE_API_KEY", originalAPIKey)
+		os.Setenv("GOOGLE_SEARCH_ID_SOUNDCLOUD", originalSCID)
+		os.Setenv("SOUNDCLOUD_CLIENT_ID", originalClientID)
+	}
+}
+
+func TestNewSoundCloudDownloaderWithoutClientID(t *testing.T) {
+	cleanup := setupTestEnv()
+	defer cleanup()
+
+	// Unset SOUNDCLOUD_CLIENT_ID for this test
 	os.Unsetenv("SOUNDCLOUD_CLIENT_ID")
 
 	// Test
@@ -24,11 +44,8 @@ func TestNewSoundCloudDownloaderWithoutClientID(t *testing.T) {
 }
 
 func TestNewSoundCloudDownloaderWithClientID(t *testing.T) {
-	// Set test client ID
-	originalClientID := os.Getenv("SOUNDCLOUD_CLIENT_ID")
-	defer os.Setenv("SOUNDCLOUD_CLIENT_ID", originalClientID) // Restore original value
-
-	os.Setenv("SOUNDCLOUD_CLIENT_ID", "test_client_id")
+	cleanup := setupTestEnv()
+	defer cleanup()
 
 	// Test
 	client, err := NewSoundCloudDownloader()
@@ -36,19 +53,22 @@ func TestNewSoundCloudDownloaderWithClientID(t *testing.T) {
 	// Assert
 	assert.NoError(t, err)
 	assert.NotNil(t, client)
-	assert.Equal(t, "test_client_id", client.clientID)
+	assert.Equal(t, "test-client-id", client.clientID)
 	assert.Equal(t, "https://api-v2.soundcloud.com", client.baseURL)
 }
 
 func TestFindURLWithEmptyQuery(t *testing.T) {
+	cleanup := setupTestEnv()
+	defer cleanup()
+
 	// Setup
 	client := &soundCloudClient{
 		baseURL:  "https://api-v2.soundcloud.com",
-		clientID: "test_client_id",
+		clientID: "test-client-id",
 	}
 
 	// Test
-	url, err := client.FindURL("")
+	url, err := client.FindURL(context.Background(), "")
 
 	// Assert
 	assert.Error(t, err)
@@ -70,7 +90,7 @@ func TestFindURLWithEmptyQuery(t *testing.T) {
 // 	}
 //
 // 	// Test with a popular DJ name
-// 	url, err := client.FindURL("Bonobo Essential Mix")
+// 	url, err := client.FindURL(context.Background(), "Bonobo Essential Mix")
 //
 // 	// Assert
 // 	assert.NoError(t, err)

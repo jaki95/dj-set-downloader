@@ -1,6 +1,7 @@
 package tracklist
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/jaki95/dj-set-downloader/config"
@@ -9,7 +10,7 @@ import (
 
 // Importer imports a tracklist from a given source.
 type Importer interface {
-	Import(source string) (*domain.Tracklist, error)
+	Import(ctx context.Context, source string) (*domain.Tracklist, error)
 }
 
 const (
@@ -23,20 +24,25 @@ type CompositeImporter struct {
 	importers []Importer
 }
 
-func NewCompositeImporter() *CompositeImporter {
+func NewCompositeImporter() (*CompositeImporter, error) {
+	importer, err := New1001TracklistsImporter()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create 1001tracklists importer: %w", err)
+	}
+
 	return &CompositeImporter{
 		importers: []Importer{
-			New1001TracklistsImporter(),
+			importer,
 			NewTrackIDParser(),
 			NewCSVParser(),
 		},
-	}
+	}, nil
 }
 
-func (c *CompositeImporter) Import(source string) (*domain.Tracklist, error) {
+func (c *CompositeImporter) Import(ctx context.Context, source string) (*domain.Tracklist, error) {
 	var lastErr error
 	for _, importer := range c.importers {
-		tracklist, err := importer.Import(source)
+		tracklist, err := importer.Import(ctx, source)
 		if err == nil {
 			return tracklist, nil
 		}
@@ -47,5 +53,5 @@ func (c *CompositeImporter) Import(source string) (*domain.Tracklist, error) {
 
 func NewImporter(config *config.Config) (Importer, error) {
 	// Always use the composite importer to try multiple sources
-	return NewCompositeImporter(), nil
+	return NewCompositeImporter()
 }
