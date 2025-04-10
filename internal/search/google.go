@@ -1,4 +1,4 @@
-package google
+package search
 
 import (
 	"context"
@@ -19,7 +19,7 @@ type GoogleClient struct {
 	searchEngines map[string]string
 }
 
-func NewClient() (*GoogleClient, error) {
+func NewGoogleClient() (*GoogleClient, error) {
 	apiKey := os.Getenv("GOOGLE_API_KEY")
 	searchEngines := map[string]string{
 		"1001tracklists": os.Getenv("GOOGLE_SEARCH_ID_1001TRACKLISTS"),

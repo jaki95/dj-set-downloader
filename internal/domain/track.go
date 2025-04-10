@@ -13,10 +13,3 @@ type Tracklist struct {
 	Artist string   `json:"artist"`
 	Tracks []*Track `json:"tracks"`
 }
-
-type SoundCloudTrack struct {
-	ID     string `json:"id"`
-	Title  string `json:"title"`
-	Artist string `json:"artist"`
-	URL    string `json:"url"`
-}

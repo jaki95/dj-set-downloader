@@ -14,11 +14,11 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly"
 	"github.com/jaki95/dj-set-downloader/internal/domain"
-	"github.com/jaki95/dj-set-downloader/internal/google"
+	"github.com/jaki95/dj-set-downloader/internal/search"
 )
 
 type tracklists1001Importer struct {
-	googleClient    *google.GoogleClient
+	googleClient    *search.GoogleClient
 	cacheDir        string
 	cacheTTL        time.Duration
 	maxRetries      int
@@ -29,7 +29,7 @@ type tracklists1001Importer struct {
 }
 
 func New1001TracklistsImporter() (*tracklists1001Importer, error) {
-	googleClient, err := google.NewClient()
+	googleClient, err := search.NewGoogleClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Google search client: %w", err)
 	}

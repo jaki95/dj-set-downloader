@@ -6,15 +6,15 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/jaki95/dj-set-downloader/internal/google"
+	"github.com/jaki95/dj-set-downloader/internal/search"
 )
 
 type SoundCloud struct {
-	googleClient *google.GoogleClient
+	googleClient *search.GoogleClient
 }
 
 func NewSoundCloud() (*SoundCloud, error) {
-	googleClient, err := google.NewClient()
+	googleClient, err := search.NewGoogleClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Google search client: %w", err)
 	}

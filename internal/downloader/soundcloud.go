@@ -12,17 +12,17 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jaki95/dj-set-downloader/internal/google"
+	"github.com/jaki95/dj-set-downloader/internal/search"
 	"github.com/k0kubun/go-ansi"
 	"github.com/schollz/progressbar/v3"
 )
 
 type soundCloudClient struct {
-	googleClient *google.GoogleClient
+	googleClient *search.GoogleClient
 }
 
 func NewSoundCloudDownloader() (*soundCloudClient, error) {
-	googleClient, err := google.NewClient()
+	googleClient, err := search.NewGoogleClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Google client: %w", err)
 	}
