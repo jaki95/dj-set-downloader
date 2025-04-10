@@ -2,11 +2,11 @@ package google
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/url"
 	"os"
+
+	"google.golang.org/api/customsearch/v1"
+	"google.golang.org/api/option"
 )
 
 type SearchResult struct {
@@ -15,12 +15,11 @@ type SearchResult struct {
 }
 
 type GoogleClient struct {
-	apiKey        string
-	searchEngines map[string]string // map of site name to search engine ID
-	httpClient    *http.Client
+	service       *customsearch.Service
+	searchEngines map[string]string
 }
 
-func NewGoogleClient() (*GoogleClient, error) {
+func NewClient() (*GoogleClient, error) {
 	apiKey := os.Getenv("GOOGLE_API_KEY")
 	searchEngines := map[string]string{
 		"1001tracklists": os.Getenv("GOOGLE_SEARCH_ID_1001TRACKLISTS"),
@@ -43,10 +42,15 @@ func NewGoogleClient() (*GoogleClient, error) {
 		return nil, fmt.Errorf("at least one search engine ID must be configured (GOOGLE_SEARCH_ID_1001TRACKLISTS or GOOGLE_SEARCH_ID_SOUNDCLOUD)")
 	}
 
+	ctx := context.Background()
+	service, err := customsearch.NewService(ctx, option.WithAPIKey(apiKey))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create custom search service: %w", err)
+	}
+
 	return &GoogleClient{
-		apiKey:        apiKey,
+		service:       service,
 		searchEngines: searchEngines,
-		httpClient:    &http.Client{},
 	}, nil
 }
 
@@ -59,41 +63,14 @@ func (c *GoogleClient) Search(ctx context.Context, query string, site string) ([
 		return nil, fmt.Errorf("search engine ID not configured for site: %s", site)
 	}
 
-	baseURL := "https://www.googleapis.com/customsearch/v1"
-	params := url.Values{}
-	params.Add("key", c.apiKey)
-	params.Add("cx", searchID)
-	params.Add("q", query)
-
-	reqURL := fmt.Sprintf("%s?%s", baseURL, params.Encode())
-	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	call := c.service.Cse.List().Cx(searchID).Q(query)
+	resp, err := call.Do()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to execute search: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	var result struct {
-		Items []struct {
-			Title string `json:"title"`
-			Link  string `json:"link"`
-		} `json:"items"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	results := make([]SearchResult, len(result.Items))
-	for i, item := range result.Items {
+	results := make([]SearchResult, len(resp.Items))
+	for i, item := range resp.Items {
 		results[i] = SearchResult{
 			Title: item.Title,
 			Link:  item.Link,

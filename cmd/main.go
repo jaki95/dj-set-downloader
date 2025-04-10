@@ -14,7 +14,6 @@ import (
 
 func main() {
 	query := flag.String("query", "", "Search query for the tracklist (e.g. 'Martin Garrix Ultra Miami 2023')")
-	soundcloudURL := flag.String("soundcloud-url", "", "URL of the SoundCloud DJ set (optional)")
 	maxWorkers := flag.Int("workers", 4, "Maximum concurrent processing tasks")
 
 	flag.Usage = func() {
@@ -58,7 +57,6 @@ func main() {
 
 	opts := &djset.ProcessingOptions{
 		Query:              *query,
-		DJSetURL:           *soundcloudURL,
 		FileExtension:      cfg.FileExtension,
 		MaxConcurrentTasks: *maxWorkers,
 	}

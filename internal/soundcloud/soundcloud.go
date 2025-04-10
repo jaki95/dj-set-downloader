@@ -14,7 +14,7 @@ type SoundCloud struct {
 }
 
 func NewSoundCloud() (*SoundCloud, error) {
-	googleClient, err := google.NewGoogleClient()
+	googleClient, err := google.NewClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Google search client: %w", err)
 	}

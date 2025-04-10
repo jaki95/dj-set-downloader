@@ -18,25 +18,16 @@ import (
 )
 
 type soundCloudClient struct {
-	baseURL      string
-	clientID     string
 	googleClient *google.GoogleClient
 }
 
 func NewSoundCloudDownloader() (*soundCloudClient, error) {
-	clientID := os.Getenv("SOUNDCLOUD_CLIENT_ID")
-	if clientID == "" {
-		return nil, fmt.Errorf("SOUNDCLOUD_CLIENT_ID not set")
-	}
-
-	googleClient, err := google.NewGoogleClient()
+	googleClient, err := google.NewClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Google client: %w", err)
 	}
 
 	return &soundCloudClient{
-		baseURL:      "https://api-v2.soundcloud.com",
-		clientID:     clientID,
 		googleClient: googleClient,
 	}, nil
 }

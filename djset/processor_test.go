@@ -493,7 +493,6 @@ func TestProcessingContext(t *testing.T) {
 	// Setup
 	opts := &ProcessingOptions{
 		Query:              "test-query",
-		DJSetURL:           "test_url",
 		FileExtension:      "mp3",
 		MaxConcurrentTasks: 1,
 	}
@@ -574,7 +573,6 @@ func TestDownloadSet(t *testing.T) {
 	ctx := context.Background()
 	procCtx := &processingContext{
 		opts: &ProcessingOptions{
-			DJSetURL:      "test_url",
 			FileExtension: "mp3",
 		},
 		progressCallback: func(progress int, message string, data []byte) {},
@@ -585,6 +583,7 @@ func TestDownloadSet(t *testing.T) {
 	}
 
 	// Setup mock expectations
+	mockDownloader.On("FindURL", mock.Anything, "Test Artist Test Set").Return("test_url", nil)
 	mockDownloader.On("Download", mock.Anything, "test_url", "Test_Set", procCtx.getDownloadDir(), mock.AnythingOfType("func(int, string)")).Return(nil)
 
 	// Test
@@ -592,7 +591,6 @@ func TestDownloadSet(t *testing.T) {
 
 	// Assert
 	assert.NoError(t, err)
-	assert.Equal(t, "test_url", procCtx.opts.DJSetURL)
 	assert.Equal(t, filepath.Join(procCtx.getDownloadDir(), "Test_Set.mp3"), procCtx.inputFile)
 	mockDownloader.AssertExpectations(t)
 }

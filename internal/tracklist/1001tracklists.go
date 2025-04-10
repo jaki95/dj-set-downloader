@@ -29,7 +29,7 @@ type tracklists1001Importer struct {
 }
 
 func New1001TracklistsImporter() (*tracklists1001Importer, error) {
-	googleClient, err := google.NewGoogleClient()
+	googleClient, err := google.NewClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Google search client: %w", err)
 	}
