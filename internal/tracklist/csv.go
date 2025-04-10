@@ -1,6 +1,7 @@
 package tracklist
 
 import (
+	"context"
 	"encoding/csv"
 	"fmt"
 	"io"
@@ -20,7 +21,13 @@ func NewCSVParser() *CSVParser {
 	return &CSVParser{}
 }
 
-func (c *CSVParser) Import(filePath string) (*domain.Tracklist, error) {
+func (c *CSVParser) Import(ctx context.Context, filePath string) (*domain.Tracklist, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open CSV file: %w", err)

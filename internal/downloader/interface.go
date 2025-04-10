@@ -9,7 +9,7 @@ import (
 
 // Downloader handles the downloading of DJ sets.
 type Downloader interface {
-	FindURL(trackQuery string) (string, error)
+	FindURL(ctx context.Context, query string) (string, error)
 	Download(ctx context.Context, trackURL, name string, downloadPath string, progressCallback func(int, string)) error
 }
 

@@ -1,7 +1,6 @@
 log_level: -4
 audio_processor: ffmpeg
 audio_source: soundcloud
-tracklist_source: trackids
 file_extension: m4a
 
 # Storage configuration
