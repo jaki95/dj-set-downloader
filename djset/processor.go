@@ -243,20 +243,7 @@ func (p *processor) importTracklist(ctx *processingContext) error {
 
 func (p *processor) downloadSet(ctx context.Context, procCtx *processingContext) error {
 
-	// Try to find the URL using the user's search query if available, otherwise use metadata
-	var input string
-	if procCtx.opts.Query != "" && strings.HasPrefix(procCtx.opts.Query, "http") {
-		// If the query looks like a URL, use it directly
-		input = procCtx.opts.Query
-	} else {
-		// Otherwise, use the set name and artist
-		input = procCtx.set.Name
-		if procCtx.set.Artist != "" {
-			input = fmt.Sprintf("%s %s", procCtx.set.Artist, input)
-		}
-	}
-
-	input = strings.TrimSpace(input)
+	input := strings.TrimSpace(procCtx.opts.Query)
 	url, err := p.setDownloader.FindURL(ctx, input)
 	if err != nil {
 		return err

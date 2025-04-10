@@ -48,7 +48,7 @@ func (s *soundCloudClient) FindURL(ctx context.Context, query string) (string, e
 	}
 
 	if len(results) == 0 {
-		return "", fmt.Errorf("no results in search")
+		return "", fmt.Errorf("no results found for query: %s", query)
 	}
 
 	// Find the first valid SoundCloud URL

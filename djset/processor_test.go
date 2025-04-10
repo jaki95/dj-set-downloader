@@ -573,6 +573,7 @@ func TestDownloadSet(t *testing.T) {
 	ctx := context.Background()
 	procCtx := &processingContext{
 		opts: &ProcessingOptions{
+			Query:         "Test Artist Test Set",
 			FileExtension: "mp3",
 		},
 		progressCallback: func(progress int, message string, data []byte) {},
@@ -777,8 +778,18 @@ func TestProcessTracksGracefulShutdown(t *testing.T) {
 
 	// Setup mocks
 	mockImporter.On("Import", mock.Anything, "test_path").Return(tracklist, nil)
-	mockDownloader.On("FindURL", mock.Anything, "Test Artist Test Set").Return("test_url", nil)
-	mockDownloader.On("Download", mock.Anything, "test_url", "Test_Set", mock.Anything, mock.Anything).Return(nil)
+	mockDownloader.On("FindURL", mock.Anything, "test_path").Return("test_url", nil)
+	mockDownloader.On("Download", mock.Anything, "test_url", "Test_Set", mock.MatchedBy(func(path string) bool {
+		return strings.HasPrefix(path, testDirs.tempDir)
+	}), mock.Anything).Return(nil)
+
+	// Create test file to simulate download
+	downloadDir := filepath.Join(testDirs.tempDir, "downloads")
+	err := os.MkdirAll(downloadDir, 0755)
+	assert.NoError(t, err)
+	err = os.WriteFile(filepath.Join(downloadDir, "Test_Set.mp3"), []byte("test data"), 0644)
+	assert.NoError(t, err)
+
 	mockAudioProcessor.On("ExtractCoverArt", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 	// Make Split take some time and check context
@@ -798,12 +809,22 @@ func TestProcessTracksGracefulShutdown(t *testing.T) {
 	}
 
 	// Process tracks
-	_, err := p.ProcessTracks(ctx, opts, func(i int, s string, data []byte) {})
+	_, err = p.ProcessTracks(ctx, opts, func(i int, s string, data []byte) {})
 
 	// Verify that the operation was cancelled
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
 
+	// Give cleanup goroutine time to finish
+	time.Sleep(50 * time.Millisecond)
+
 	// Verify that temporary files are cleaned up
-	assert.NoDirExists(t, filepath.Join(testDirs.tempDir, "downloads"))
-	assert.NoDirExists(t, filepath.Join(testDirs.tempDir, "processing"))
+	downloadPath := filepath.Join(testDirs.tempDir, "downloads")
+	processingPath := filepath.Join(testDirs.tempDir, "processing")
+	assert.NoDirExists(t, downloadPath, "Download directory should be cleaned up")
+	assert.NoDirExists(t, processingPath, "Processing directory should be cleaned up")
+
+	// Verify all mocks were called as expected
+	mockImporter.AssertExpectations(t)
+	mockDownloader.AssertExpectations(t)
+	mockAudioProcessor.AssertExpectations(t)
 }
