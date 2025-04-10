@@ -18,15 +18,34 @@ const (
 	TrackIDsTracklist    = "trackids"
 )
 
-func NewImporter(config *config.Config) (Importer, error) {
-	switch config.TracklistSource {
-	case Source1001Tracklists:
-		return New1001TracklistsImporter(), nil
-	case CSVTracklist:
-		return NewCSVParser(), nil
-	case TrackIDsTracklist:
-		return NewTrackIDParser(), nil
-	default:
-		return nil, fmt.Errorf("unknown tracklist source: %s", config.TracklistSource)
+// CompositeImporter tries multiple importers in sequence until one succeeds
+type CompositeImporter struct {
+	importers []Importer
+}
+
+func NewCompositeImporter() *CompositeImporter {
+	return &CompositeImporter{
+		importers: []Importer{
+			New1001TracklistsImporter(),
+			NewTrackIDParser(),
+			NewCSVParser(),
+		},
 	}
+}
+
+func (c *CompositeImporter) Import(source string) (*domain.Tracklist, error) {
+	var lastErr error
+	for _, importer := range c.importers {
+		tracklist, err := importer.Import(source)
+		if err == nil {
+			return tracklist, nil
+		}
+		lastErr = err
+	}
+	return nil, fmt.Errorf("all importers failed: %w", lastErr)
+}
+
+func NewImporter(config *config.Config) (Importer, error) {
+	// Always use the composite importer to try multiple sources
+	return NewCompositeImporter(), nil
 }
