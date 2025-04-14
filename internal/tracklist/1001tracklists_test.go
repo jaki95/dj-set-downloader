@@ -9,6 +9,9 @@ import (
 )
 
 func Test1001TracklistsScraping(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode") // Skip this test when -short flag is provided
+	}
 	// Create a mock search client that returns our test URL
 	mockSearchClient := &search.MockGoogleClient{
 		SearchFunc: func(ctx context.Context, query string, site string) ([]search.SearchResult, error) {
