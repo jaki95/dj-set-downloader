@@ -77,13 +77,6 @@ func (t *TrackIDImporter) Import(ctx context.Context, keywords string) (*domain.
 		return nil, fmt.Errorf("no tracks found in TrackID response")
 	}
 
-	// Ensure all tracks have required fields
-	for _, track := range tracklist.Tracks {
-		if track.Artist == "" || track.Title == "" || track.StartTime == "" || track.EndTime == "" || track.TrackNumber == 0 {
-			return nil, fmt.Errorf("invalid track data: missing required fields")
-		}
-	}
-
 	return tracklist, nil
 }
 
