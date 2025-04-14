@@ -14,12 +14,18 @@ type SearchResult struct {
 	Link  string
 }
 
-type GoogleClient struct {
+// GoogleClient defines the interface for Google search operations
+type GoogleClient interface {
+	Search(ctx context.Context, query string, site string) ([]SearchResult, error)
+}
+
+// googleClientImpl is the concrete implementation of GoogleClient
+type googleClientImpl struct {
 	service       *customsearch.Service
 	searchEngines map[string]string
 }
 
-func NewGoogleClient() (*GoogleClient, error) {
+func NewGoogleClient() (GoogleClient, error) {
 	apiKey := os.Getenv("GOOGLE_API_KEY")
 	searchEngines := map[string]string{
 		"1001tracklists": os.Getenv("GOOGLE_SEARCH_ID_1001TRACKLISTS"),
@@ -48,13 +54,13 @@ func NewGoogleClient() (*GoogleClient, error) {
 		return nil, fmt.Errorf("failed to create custom search service: %w", err)
 	}
 
-	return &GoogleClient{
+	return &googleClientImpl{
 		service:       service,
 		searchEngines: searchEngines,
 	}, nil
 }
 
-func (c *GoogleClient) Search(ctx context.Context, query string, site string) ([]SearchResult, error) {
+func (c *googleClientImpl) Search(ctx context.Context, query string, site string) ([]SearchResult, error) {
 	searchID, ok := c.searchEngines[site]
 	if !ok {
 		return nil, fmt.Errorf("no search engine configured for site: %s", site)

@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 )
 
 type tracklists1001Importer struct {
-	googleClient    *search.GoogleClient
+	searchClient    search.GoogleClient
 	cacheDir        string
 	cacheTTL        time.Duration
 	maxRetries      int
@@ -28,19 +29,18 @@ type tracklists1001Importer struct {
 	lastRequestTime time.Time
 }
 
-func New1001TracklistsImporter() (*tracklists1001Importer, error) {
-	googleClient, err := search.NewGoogleClient()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Google search client: %w", err)
-	}
+func (t *tracklists1001Importer) Name() string {
+	return "1001tracklists"
+}
 
+func New1001TracklistsImporter(searchClient search.GoogleClient) (*tracklists1001Importer, error) {
 	cacheDir := filepath.Join(os.TempDir(), "dj-set-downloader", "1001tracklists")
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
 	return &tracklists1001Importer{
-		googleClient: googleClient,
+		searchClient: searchClient,
 		cacheDir:     cacheDir,
 		cacheTTL:     24 * time.Hour,
 		maxRetries:   4,
@@ -63,7 +63,7 @@ func (i *tracklists1001Importer) Import(ctx context.Context, query string) (*dom
 
 	// First try to find the tracklist URL using Google search
 	searchQuery := fmt.Sprintf("site:1001tracklists.com %s", query)
-	results, err := i.googleClient.Search(ctx, searchQuery, "1001tracklists")
+	results, err := i.searchClient.Search(ctx, searchQuery, "1001tracklists")
 	if err != nil {
 		return nil, fmt.Errorf("failed to search for tracklist: %w", err)
 	}
@@ -134,29 +134,48 @@ func (t *tracklists1001Importer) scrapeWithColly(ctx context.Context, url string
 
 	// Extract tracks with timing information
 	trackCounter := 1
+	var lastTrack *domain.Track
+
 	c.OnHTML("div.tlpTog", func(e *colly.HTMLElement) {
 		slog.Debug("Found track element", "trackNumber", trackCounter)
+
+		// Get start time and handle empty values
 		startTime := strings.TrimSpace(e.ChildText("div.cue.noWrap.action.mt5"))
 		if startTime == "" {
-			startTime = "00:00"
+			// If this is the first track, use 00:00
+			if trackCounter == 1 {
+				startTime = "00:00"
+			} else if lastTrack != nil {
+				// Otherwise, use the end time of the previous track
+				startTime = lastTrack.EndTime
+			}
 		}
 
+		// Get track value and handle non-breaking spaces
 		trackValue := strings.TrimSpace(e.ChildText("span.trackValue"))
+		trackValue = strings.ReplaceAll(trackValue, "\u00A0", " ") // Replace non-breaking spaces
 		artist, title := parseTrackValue(trackValue)
+		if artist == "" || title == "" {
+			slog.Warn("Invalid track value", "trackValue", trackValue)
+			return
+		}
+
 		slog.Debug("Parsed track", "artist", artist, "title", title, "startTime", startTime)
 
 		track := &domain.Track{
 			Artist:      artist,
 			Title:       title,
-			StartTime:   startTime,
+			StartTime:   normalizeTime(startTime),
 			TrackNumber: trackCounter,
 		}
 
-		if trackCounter > 1 && len(tracklist.Tracks) > 0 {
-			tracklist.Tracks[trackCounter-2].EndTime = startTime
+		// If we have a previous track, set its end time to this track's start time
+		if lastTrack != nil {
+			lastTrack.EndTime = track.StartTime
 		}
 
 		tracklist.Tracks = append(tracklist.Tracks, track)
+		lastTrack = track
 		trackCounter++
 	})
 
@@ -174,9 +193,9 @@ func (t *tracklists1001Importer) scrapeWithColly(ctx context.Context, url string
 		return nil, fmt.Errorf("no tracks found in tracklist")
 	}
 
-	// Set end time for last track
-	if len(tracklist.Tracks) > 0 {
-		tracklist.Tracks[len(tracklist.Tracks)-1].EndTime = ""
+	// Set end time for last track to empty string
+	if lastTrack != nil {
+		lastTrack.EndTime = ""
 	}
 
 	return tracklist, nil
@@ -229,4 +248,36 @@ func extractSetName(fullText string) string {
 	name = strings.ReplaceAll(name, "Set", "")
 	name = strings.TrimSpace(name)
 	return name
+}
+
+// normalizeTime converts various time formats to a consistent format
+func normalizeTime(timeStr string) string {
+	if timeStr == "" {
+		return ""
+	}
+
+	// Remove any leading/trailing whitespace
+	timeStr = strings.TrimSpace(timeStr)
+
+	// If it's already in the correct format (HH:MM:SS or MM:SS), return as is
+	if matched, _ := regexp.MatchString(`^(\d{1,2}:)?[0-5]?\d:[0-5]\d$`, timeStr); matched {
+		return timeStr
+	}
+
+	// Try to parse the time
+	var hours, minutes, seconds int
+	if _, err := fmt.Sscanf(timeStr, "%d:%d:%d", &hours, &minutes, &seconds); err == nil {
+		return fmt.Sprintf("%d:%02d:%02d", hours, minutes, seconds)
+	}
+	if _, err := fmt.Sscanf(timeStr, "%d:%d", &minutes, &seconds); err == nil {
+		if minutes >= 60 {
+			hours = minutes / 60
+			minutes = minutes % 60
+			return fmt.Sprintf("%d:%02d:%02d", hours, minutes, seconds)
+		}
+		return fmt.Sprintf("%02d:%02d", minutes, seconds)
+	}
+
+	// If we can't parse it, return the original string
+	return timeStr
 }

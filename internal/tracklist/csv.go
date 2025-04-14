@@ -14,14 +14,18 @@ import (
 	"github.com/jaki95/dj-set-downloader/internal/domain"
 )
 
-type CSVParser struct {
+type CSVImporter struct {
 }
 
-func NewCSVParser() *CSVParser {
-	return &CSVParser{}
+func NewCSVImporter() *CSVImporter {
+	return &CSVImporter{}
 }
 
-func (c *CSVParser) Import(ctx context.Context, filePath string) (*domain.Tracklist, error) {
+func (c *CSVImporter) Name() string {
+	return "csv"
+}
+
+func (c *CSVImporter) Import(ctx context.Context, filePath string) (*domain.Tracklist, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -50,7 +54,7 @@ func (c *CSVParser) Import(ctx context.Context, filePath string) (*domain.Trackl
 	return tracklist, nil
 }
 
-func (c *CSVParser) parseTracklist(reader *csv.Reader) (*domain.Tracklist, error) {
+func (c *CSVImporter) parseTracklist(reader *csv.Reader) (*domain.Tracklist, error) {
 	header, err := reader.Read()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read CSV header: %w", err)
@@ -91,7 +95,7 @@ func (c *CSVParser) parseTracklist(reader *csv.Reader) (*domain.Tracklist, error
 	return tracklist, nil
 }
 
-func (c *CSVParser) processFirstTrack(tracklist *domain.Tracklist, metadata []string, trackCounter *int, previousEndTime *string) error {
+func (c *CSVImporter) processFirstTrack(tracklist *domain.Tracklist, metadata []string, trackCounter *int, previousEndTime *string) error {
 	startTime, endTime := metadata[4], metadata[5]
 	artist, title := metadata[6], metadata[7]
 
@@ -106,7 +110,7 @@ func (c *CSVParser) processFirstTrack(tracklist *domain.Tracklist, metadata []st
 	return nil
 }
 
-func (c *CSVParser) processRemainingTracks(reader *csv.Reader, tracklist *domain.Tracklist, totalDuration string, trackCounter *int, previousEndTime *string) error {
+func (c *CSVImporter) processRemainingTracks(reader *csv.Reader, tracklist *domain.Tracklist, totalDuration string, trackCounter *int, previousEndTime *string) error {
 	for {
 		record, err := reader.Read()
 		if err == io.EOF {
@@ -131,7 +135,7 @@ func (c *CSVParser) processRemainingTracks(reader *csv.Reader, tracklist *domain
 	return c.handleFinalGap(tracklist, *previousEndTime, totalDuration, trackCounter)
 }
 
-func (c *CSVParser) handleTrackGap(tracklist *domain.Tracklist, previousEndTime, startTime string, trackCounter *int) {
+func (c *CSVImporter) handleTrackGap(tracklist *domain.Tracklist, previousEndTime, startTime string, trackCounter *int) {
 	if previousEndTime == "" {
 		return
 	}
@@ -159,7 +163,7 @@ func (c *CSVParser) handleTrackGap(tracklist *domain.Tracklist, previousEndTime,
 	}
 }
 
-func (c *CSVParser) handleFinalGap(tracklist *domain.Tracklist, previousEndTime, totalDuration string, trackCounter *int) error {
+func (c *CSVImporter) handleFinalGap(tracklist *domain.Tracklist, previousEndTime, totalDuration string, trackCounter *int) error {
 	if previousEndTime == "" || previousEndTime == totalDuration {
 		return nil
 	}
@@ -181,7 +185,7 @@ func (c *CSVParser) handleFinalGap(tracklist *domain.Tracklist, previousEndTime,
 	return nil
 }
 
-func (c *CSVParser) addTrack(tracklist *domain.Tracklist, artist, title, startTime, endTime string, trackNumber int) {
+func (c *CSVImporter) addTrack(tracklist *domain.Tracklist, artist, title, startTime, endTime string, trackNumber int) {
 	tracklist.Tracks = append(tracklist.Tracks, &domain.Track{
 		Artist:      artist,
 		Title:       title,
@@ -191,14 +195,14 @@ func (c *CSVParser) addTrack(tracklist *domain.Tracklist, artist, title, startTi
 	})
 }
 
-func (c *CSVParser) addIDTrack(tracklist *domain.Tracklist, startTime, endTime string, trackNumber int) {
+func (c *CSVImporter) addIDTrack(tracklist *domain.Tracklist, startTime, endTime string, trackNumber int) {
 	c.addTrack(tracklist, "ID", "ID", startTime, endTime, trackNumber)
 	slog.Debug("ID track added",
 		"start", startTime,
 		"end", endTime)
 }
 
-func (c *CSVParser) calculateDuration(startTime, endTime string) int {
+func (c *CSVImporter) calculateDuration(startTime, endTime string) int {
 	start := c.parseTime(startTime)
 	end := c.parseTime(endTime)
 	if start.IsZero() || end.IsZero() {
@@ -207,7 +211,7 @@ func (c *CSVParser) calculateDuration(startTime, endTime string) int {
 	return int(end.Sub(start).Seconds())
 }
 
-func (c *CSVParser) parseTime(timeStr string) time.Time {
+func (c *CSVImporter) parseTime(timeStr string) time.Time {
 	parts := strings.Split(timeStr, ":")
 	if len(parts) != 3 {
 		return time.Time{}
@@ -220,7 +224,7 @@ func (c *CSVParser) parseTime(timeStr string) time.Time {
 	return time.Date(0, 1, 1, hours, minutes, seconds, 0, time.UTC)
 }
 
-func (c *CSVParser) calculateMidpoint(startTime, endTime string) string {
+func (c *CSVImporter) calculateMidpoint(startTime, endTime string) string {
 	start := c.parseTime(startTime)
 	end := c.parseTime(endTime)
 	duration := end.Sub(start)

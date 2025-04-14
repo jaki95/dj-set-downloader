@@ -18,7 +18,7 @@ import (
 )
 
 type soundCloudClient struct {
-	googleClient *search.GoogleClient
+	googleClient search.GoogleClient
 }
 
 func NewSoundCloudDownloader() (*soundCloudClient, error) {

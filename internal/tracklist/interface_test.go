@@ -16,6 +16,7 @@ type MockImporter struct {
 	shouldFail bool
 	tracklist  *domain.Tracklist
 	err        error
+	name       string
 }
 
 func (m *MockImporter) Import(ctx context.Context, source string) (*domain.Tracklist, error) {
@@ -23,6 +24,13 @@ func (m *MockImporter) Import(ctx context.Context, source string) (*domain.Track
 		return nil, m.err
 	}
 	return m.tracklist, nil
+}
+
+func (m *MockImporter) Name() string {
+	if m.name == "" {
+		return "mock"
+	}
+	return m.name
 }
 
 func setupTestEnv() func() {
@@ -90,8 +98,8 @@ func TestCompositeImporter(t *testing.T) {
 	assert.NotNil(t, importer)
 	assert.Equal(t, 3, len(importer.importers))
 	assert.Equal(t, "*tracklist.tracklists1001Importer", getTypeName(importer.importers[0]))
-	assert.Equal(t, "*tracklist.TrackIDParser", getTypeName(importer.importers[1]))
-	assert.Equal(t, "*tracklist.CSVParser", getTypeName(importer.importers[2]))
+	assert.Equal(t, "*tracklist.TrackIDImporter", getTypeName(importer.importers[1]))
+	assert.Equal(t, "*tracklist.CSVImporter", getTypeName(importer.importers[2]))
 }
 
 func TestCompositeImporterFallback(t *testing.T) {

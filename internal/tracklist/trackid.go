@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -16,29 +15,22 @@ import (
 	"github.com/jaki95/dj-set-downloader/internal/domain"
 )
 
-type TrackIDParser struct {
+type TrackIDImporter struct {
 	baseURL   string
 	searchURL string
 }
 
-type TrackIDResponse struct {
+type trackIDResponse struct {
 	Result struct {
 		Title     string `json:"title"`
 		Duration  string `json:"duration"`
 		Processes []struct {
-			Tracks []Track `json:"detectionProcessMusicTracks"`
+			Tracks []domain.Track `json:"detectionProcessMusicTracks"`
 		} `json:"detectionProcesses"`
 	} `json:"result"`
 }
 
-type Track struct {
-	StartTime string `json:"startTime"`
-	EndTime   string `json:"endTime"`
-	Artist    string `json:"artist"`
-	Title     string `json:"title"`
-}
-
-type TrackIDSearchResponse struct {
+type trackIDSearchResponse struct {
 	Result struct {
 		Audiostreams []struct {
 			Slug  string `json:"slug"`
@@ -48,14 +40,18 @@ type TrackIDSearchResponse struct {
 	} `json:"result"`
 }
 
-func NewTrackIDParser() *TrackIDParser {
-	return &TrackIDParser{
+func NewTrackIDImporter() *TrackIDImporter {
+	return &TrackIDImporter{
 		baseURL:   "https://trackid.net:8001/api/public/audiostreams/",
 		searchURL: "https://trackid.net:8001/api/public/audiostreams",
 	}
 }
 
-func (t *TrackIDParser) Import(ctx context.Context, keywords string) (*domain.Tracklist, error) {
+func (t *TrackIDImporter) Name() string {
+	return "trackid"
+}
+
+func (t *TrackIDImporter) Import(ctx context.Context, keywords string) (*domain.Tracklist, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -64,27 +60,34 @@ func (t *TrackIDParser) Import(ctx context.Context, keywords string) (*domain.Tr
 
 	slug, err := t.findSlug(ctx, keywords)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to find slug: %w", err)
 	}
 
 	resp, err := t.fetchTrackData(ctx, slug)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to fetch track data: %w", err)
 	}
 
 	tracklist, err := t.parseTracklist(resp)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse tracklist: %w", err)
 	}
 
 	if len(tracklist.Tracks) == 0 {
 		return nil, fmt.Errorf("no tracks found in TrackID response")
 	}
 
+	// Ensure all tracks have required fields
+	for _, track := range tracklist.Tracks {
+		if track.Artist == "" || track.Title == "" || track.StartTime == "" || track.EndTime == "" || track.TrackNumber == 0 {
+			return nil, fmt.Errorf("invalid track data: missing required fields")
+		}
+	}
+
 	return tracklist, nil
 }
 
-func (t *TrackIDParser) findSlug(ctx context.Context, keywords string) (string, error) {
+func (t *TrackIDImporter) findSlug(ctx context.Context, keywords string) (string, error) {
 	select {
 	case <-ctx.Done():
 		return "", ctx.Err()
@@ -117,7 +120,7 @@ func (t *TrackIDParser) findSlug(ctx context.Context, keywords string) (string, 
 		return "", fmt.Errorf("failed to read search response body: %w", err)
 	}
 
-	var searchResp TrackIDSearchResponse
+	var searchResp trackIDSearchResponse
 	if err := json.Unmarshal(body, &searchResp); err != nil {
 		return "", fmt.Errorf("failed to unmarshal search JSON: %w", err)
 	}
@@ -135,7 +138,7 @@ func (t *TrackIDParser) findSlug(ctx context.Context, keywords string) (string, 
 	return slug, nil
 }
 
-func (t *TrackIDParser) fetchTrackData(ctx context.Context, slug string) (*TrackIDResponse, error) {
+func (t *TrackIDImporter) fetchTrackData(ctx context.Context, slug string) (*trackIDResponse, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -145,7 +148,7 @@ func (t *TrackIDParser) fetchTrackData(ctx context.Context, slug string) (*Track
 	url := t.baseURL + slug
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to create track data request: %w", err)
 	}
 
 	t.setCommonHeaders(req)
@@ -159,36 +162,23 @@ func (t *TrackIDParser) fetchTrackData(ctx context.Context, slug string) (*Track
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, fmt.Errorf("failed to read track data response body: %w", err)
 	}
 
-	var trackResp TrackIDResponse
+	var trackResp trackIDResponse
 	if err := json.Unmarshal(body, &trackResp); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal JSON: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal track data JSON: %w", err)
 	}
-
-	slog.Debug("TrackID response received",
-		"title", trackResp.Result.Title,
-		"duration", trackResp.Result.Duration)
 
 	return &trackResp, nil
 }
 
-func (t *TrackIDParser) setCommonHeaders(req *http.Request) {
-	req.Header.Set("Accept", "*/*")
-	req.Header.Set("Sec-Fetch-Site", "same-site")
-	req.Header.Set("Origin", "https://www.trackid.net")
-	req.Header.Set("Sec-Fetch-Dest", "empty")
-	req.Header.Set("Accept-Language", "en-GB,en;q=0.9")
-	req.Header.Set("Sec-Fetch-Mode", "cors")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15")
-	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
-	req.Header.Set("Referer", "https://www.trackid.net/")
-	req.Header.Set("Priority", "u=3, i")
+func (t *TrackIDImporter) setCommonHeaders(req *http.Request) {
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "dj-set-downloader/1.0")
 }
 
-func (t *TrackIDParser) parseTracklist(resp *TrackIDResponse) (*domain.Tracklist, error) {
-
+func (t *TrackIDImporter) parseTracklist(resp *trackIDResponse) (*domain.Tracklist, error) {
 	title := resp.Result.Title
 	artist := inferArtistFromTitle(title)
 
@@ -200,7 +190,7 @@ func (t *TrackIDParser) parseTracklist(resp *TrackIDResponse) (*domain.Tracklist
 	trackCounter := 1
 	previousEndTime := ""
 
-	var allTracks []Track
+	var allTracks []domain.Track
 	for _, process := range resp.Result.Processes {
 		allTracks = append(allTracks, process.Tracks...)
 	}
@@ -226,7 +216,7 @@ func (t *TrackIDParser) parseTracklist(resp *TrackIDResponse) (*domain.Tracklist
 	return tracklist, nil
 }
 
-func (t *TrackIDParser) processFirstTrack(tracklist *domain.Tracklist, firstTrack Track, trackCounter *int, previousEndTime *string) error {
+func (t *TrackIDImporter) processFirstTrack(tracklist *domain.Tracklist, firstTrack domain.Track, trackCounter *int, previousEndTime *string) error {
 	if firstTrack.StartTime != "00:00:00" {
 		t.addIDTrack(tracklist, "00:00:00", firstTrack.StartTime, *trackCounter)
 		*trackCounter++
@@ -238,7 +228,7 @@ func (t *TrackIDParser) processFirstTrack(tracklist *domain.Tracklist, firstTrac
 	return nil
 }
 
-func (t *TrackIDParser) handleTrackGap(tracklist *domain.Tracklist, previousEndTime, startTime string, trackCounter *int) {
+func (t *TrackIDImporter) handleTrackGap(tracklist *domain.Tracklist, previousEndTime, startTime string, trackCounter *int) {
 	if previousEndTime == "" {
 		return
 	}
@@ -266,7 +256,7 @@ func (t *TrackIDParser) handleTrackGap(tracklist *domain.Tracklist, previousEndT
 	}
 }
 
-func (t *TrackIDParser) handleFinalGap(tracklist *domain.Tracklist, previousEndTime, totalDuration string, trackCounter *int) error {
+func (t *TrackIDImporter) handleFinalGap(tracklist *domain.Tracklist, previousEndTime, totalDuration string, trackCounter *int) error {
 	if previousEndTime == "" || previousEndTime == totalDuration {
 		return nil
 	}
@@ -288,7 +278,7 @@ func (t *TrackIDParser) handleFinalGap(tracklist *domain.Tracklist, previousEndT
 	return nil
 }
 
-func (t *TrackIDParser) addTrack(tracklist *domain.Tracklist, artist, title, startTime, endTime string, trackNumber int) {
+func (t *TrackIDImporter) addTrack(tracklist *domain.Tracklist, artist, title, startTime, endTime string, trackNumber int) {
 	tracklist.Tracks = append(tracklist.Tracks, &domain.Track{
 		Artist:      artist,
 		Title:       title,
@@ -298,14 +288,14 @@ func (t *TrackIDParser) addTrack(tracklist *domain.Tracklist, artist, title, sta
 	})
 }
 
-func (t *TrackIDParser) addIDTrack(tracklist *domain.Tracklist, startTime, endTime string, trackNumber int) {
+func (t *TrackIDImporter) addIDTrack(tracklist *domain.Tracklist, startTime, endTime string, trackNumber int) {
 	t.addTrack(tracklist, "ID", "ID", startTime, endTime, trackNumber)
 	slog.Debug("ID track added",
 		"start", startTime,
 		"end", endTime)
 }
 
-func (t *TrackIDParser) calculateDuration(startTime, endTime string) int {
+func (t *TrackIDImporter) calculateDuration(startTime, endTime string) int {
 	start := t.parseTime(startTime)
 	end := t.parseTime(endTime)
 	if start.IsZero() || end.IsZero() {
@@ -314,7 +304,7 @@ func (t *TrackIDParser) calculateDuration(startTime, endTime string) int {
 	return int(end.Sub(start).Seconds())
 }
 
-func (t *TrackIDParser) parseTime(timeStr string) time.Time {
+func (t *TrackIDImporter) parseTime(timeStr string) time.Time {
 	parts := strings.Split(timeStr, ".")
 	timeParts := strings.Split(parts[0], ":")
 	if len(timeParts) != 3 {
@@ -328,7 +318,7 @@ func (t *TrackIDParser) parseTime(timeStr string) time.Time {
 	return time.Date(0, 1, 1, hours, minutes, seconds, 0, time.UTC)
 }
 
-func (t *TrackIDParser) calculateMidpoint(startTime, endTime string) string {
+func (t *TrackIDImporter) calculateMidpoint(startTime, endTime string) string {
 	start := t.parseTime(startTime)
 	end := t.parseTime(endTime)
 	duration := end.Sub(start)
@@ -336,108 +326,52 @@ func (t *TrackIDParser) calculateMidpoint(startTime, endTime string) string {
 	return fmt.Sprintf("%02d:%02d:%02d", midpoint.Hour(), midpoint.Minute(), midpoint.Second())
 }
 
-// SanitizeFilename removes or replaces unsafe characters from filenames
-func SanitizeFilename(filename string) string {
-	// Define a regex to match unsafe characters (anything except letters, numbers, underscore, and dot)
-	re := regexp.MustCompile(`[^\w\.-]`)
-
-	// Replace unsafe characters with an underscore
-	safeName := re.ReplaceAllString(filename, "_")
-
-	// Trim multiple underscores and ensure a clean format
-	safeName = strings.Trim(safeName, "_")
-	safeName = strings.ReplaceAll(safeName, "__", "_") // Avoid double underscores
-
-	return safeName
-}
-
 // inferArtistFromTitle attempts to extract the artist name from a DJ set title
 // based on common patterns like "Artist - Title", "Artist @ Venue", etc.
 func inferArtistFromTitle(title string) string {
-	// Common separators in DJ set titles
-	separators := []struct {
-		pattern string
-		regex   *regexp.Regexp
-	}{
-		// Artist - Title
-		{"-", regexp.MustCompile(`^([^-]+)\s*-\s*.+`)},
-		// Artist @ Venue/Event
-		{"@", regexp.MustCompile(`^([^@]+)\s*@\s*.+`)},
-		// Artist | Event/Show
-		{"|", regexp.MustCompile(`^([^|]+)\s*\|\s*.+`)},
-		// Artist presents Title
-		{"presents", regexp.MustCompile(`^([^\s]+(?:\s+[^\s]+)?)\s+presents\s+.+`)},
-		// Artist live at Venue
-		{"live at", regexp.MustCompile(`^([^(]+?)\s+live\s+at\s+.+`)},
+	if title == "" {
+		return ""
 	}
 
+	// Don't extract artist from titles starting with "The"
+	if strings.HasPrefix(title, "The ") {
+		return ""
+	}
+
+	words := strings.Fields(title)
+	if len(words) <= 1 {
+		return ""
+	}
+
+	// Common separators that indicate end of artist name
+	separators := []string{
+		" - ",
+		" | ",
+		" @ ",
+		" live at ",
+		" presents ",
+		" b2b ",
+	}
+
+	// Check for radio show patterns first
+	if strings.Contains(title, "Episode") || strings.Contains(title, "Live") {
+		// Extract show name without episode number
+		parts := strings.Split(title, "Episode")
+		if len(parts) > 1 {
+			return strings.TrimSpace(parts[0])
+		}
+		parts = strings.Split(title, "Live")
+		if len(parts) > 1 {
+			return strings.TrimSpace(parts[0])
+		}
+	}
+
+	// Try to find the first separator
 	for _, sep := range separators {
-		matches := sep.regex.FindStringSubmatch(title)
-		if len(matches) > 1 {
-			return strings.TrimSpace(matches[1])
+		if idx := strings.Index(strings.ToLower(title), strings.ToLower(sep)); idx > 0 {
+			return strings.TrimSpace(title[:idx])
 		}
 	}
 
-	// Special format for series like "Drumcode Radio Live" -> "Drumcode Radio"
-	// and "Anjunadeep Edition Episode 400" -> "Anjunadeep Edition"
-	seriesPatterns := []struct {
-		regex     *regexp.Regexp
-		maxGroups int // How many words to consider as the artist name
-	}{
-		{regexp.MustCompile(`^((?:[A-Z][a-z]*\s*)+)(?:Live|Episode|Podcast|Radio Show|Mix|Set)\b`), 2},
-	}
-
-	for _, pattern := range seriesPatterns {
-		matches := pattern.regex.FindStringSubmatch(title)
-		if len(matches) > 1 {
-			words := strings.Fields(matches[1])
-			if len(words) > pattern.maxGroups {
-				words = words[:pattern.maxGroups]
-			}
-			return strings.Join(words, " ")
-		}
-	}
-
-	// If no patterns match, check if there's any whitespace - take first part
-	// This is less reliable but can work for cases like "Artist Title"
-	parts := strings.Fields(title)
-	if len(parts) > 1 {
-		// Skip articles and common non-artist words
-		skipWords := map[string]bool{
-			"The": true, "A": true, "An": true,
-			"By": true, "With": true, "And": true,
-			"From": true, "Of": true, "In": true,
-			"On": true, "At": true, "To": true,
-		}
-
-		// If first word is a skip word, don't attempt this heuristic
-		if len(parts) > 0 && skipWords[parts[0]] {
-			return ""
-		}
-
-		// If first 2-3 words are capitalized, they likely represent an artist name
-		// This is a heuristic and not always accurate
-		nameCandidate := ""
-		wordCount := min(3, len(parts))
-
-		for i := 0; i < wordCount; i++ {
-			// Check if word starts with uppercase (likely part of a name)
-			word := parts[i]
-			if len(word) > 0 && word[0] >= 'A' && word[0] <= 'Z' && !skipWords[word] {
-				if nameCandidate != "" {
-					nameCandidate += " "
-				}
-				nameCandidate += word
-			} else if nameCandidate != "" {
-				// Stop if we've already found some name parts and hit a non-matching word
-				break
-			}
-		}
-
-		if nameCandidate != "" {
-			return nameCandidate
-		}
-	}
-
-	return "" // No pattern matched
+	return ""
 }
