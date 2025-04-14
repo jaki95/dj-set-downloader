@@ -165,7 +165,7 @@ func (t *tracklists1001Importer) scrapeWithColly(ctx context.Context, url string
 		track := &domain.Track{
 			Artist:      artist,
 			Title:       title,
-			StartTime:   normalizeTime(startTime),
+			StartTime:   normaliseTime(startTime),
 			TrackNumber: trackCounter,
 		}
 
@@ -250,8 +250,8 @@ func extractSetName(fullText string) string {
 	return name
 }
 
-// normalizeTime converts various time formats to a consistent format
-func normalizeTime(timeStr string) string {
+// normaliseTime converts various time formats to a consistent format
+func normaliseTime(timeStr string) string {
 	if timeStr == "" {
 		return ""
 	}
