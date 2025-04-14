@@ -42,6 +42,11 @@ func (m *MockTracklistImporter) Import(ctx context.Context, path string) (*domai
 	return args.Get(0).(*domain.Tracklist), args.Error(1)
 }
 
+func (m *MockTracklistImporter) Name() string {
+	args := m.Called()
+	return args.String(0)
+}
+
 type MockDownloader struct {
 	mock.Mock
 }
