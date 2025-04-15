@@ -16,6 +16,7 @@ import (
 	"github.com/jaki95/dj-set-downloader/internal/audio"
 	"github.com/jaki95/dj-set-downloader/internal/domain"
 	"github.com/jaki95/dj-set-downloader/internal/downloader"
+	"github.com/jaki95/dj-set-downloader/internal/progress"
 	"github.com/jaki95/dj-set-downloader/internal/tracklist"
 	"github.com/k0kubun/go-ansi"
 	"github.com/schollz/progressbar/v3"
@@ -31,6 +32,7 @@ type processor struct {
 	tracklistImporter tracklist.Importer
 	setDownloader     downloader.Downloader
 	audioProcessor    audio.Processor
+	progressTracker   *progress.ProgressTracker
 }
 
 // New creates a new processor instance
@@ -39,6 +41,7 @@ func New(tracklistImporter tracklist.Importer, setDownloader downloader.Download
 		tracklistImporter: tracklistImporter,
 		setDownloader:     setDownloader,
 		audioProcessor:    audioProcessor,
+		progressTracker:   progress.NewProgressTracker(),
 	}
 }
 
@@ -96,11 +99,13 @@ func (p *processor) ProcessTracks(ctx context.Context, opts *ProcessingOptions, 
 
 	// Create base directories
 	if err := ensureBaseDirectories(); err != nil {
+		p.progressTracker.SetError(err)
 		return nil, fmt.Errorf("failed to create base directories: %w", err)
 	}
 
 	// Create temp directories
 	if err := ensureTempDirectories(procCtx); err != nil {
+		p.progressTracker.SetError(err)
 		return nil, fmt.Errorf("failed to create temp directories: %w", err)
 	}
 
@@ -110,52 +115,65 @@ func (p *processor) ProcessTracks(ctx context.Context, opts *ProcessingOptions, 
 	// Check for cancellation
 	select {
 	case <-ctx.Done():
+		p.progressTracker.SetError(ctx.Err())
 		return nil, ctx.Err()
 	default:
 	}
 
 	// Step 1: Import tracklist
+	p.progressTracker.UpdateProgress(progress.StageImporting, 0, "Importing tracklist...", nil)
 	if err := p.importTracklist(procCtx); err != nil {
+		p.progressTracker.SetError(err)
 		return nil, err
 	}
 
 	// Check for cancellation
 	select {
 	case <-ctx.Done():
+		p.progressTracker.SetError(ctx.Err())
 		return nil, ctx.Err()
 	default:
 	}
 
 	// Step 2: Download set
+	p.progressTracker.UpdateProgress(progress.StageDownloading, 10, "Downloading set...", nil)
 	if err := p.downloadSet(ctx, procCtx); err != nil {
+		p.progressTracker.SetError(err)
 		return nil, err
 	}
 
 	// Check for cancellation
 	select {
 	case <-ctx.Done():
+		p.progressTracker.SetError(ctx.Err())
 		return nil, ctx.Err()
 	default:
 	}
 
 	// Step 3: Prepare for processing (extract cover art)
+	p.progressTracker.UpdateProgress(progress.StageProcessing, 50, "Preparing for processing...", nil)
 	if err := p.prepareForProcessing(ctx, procCtx); err != nil {
+		p.progressTracker.SetError(err)
 		return nil, err
 	}
 
 	// Check for cancellation
 	select {
 	case <-ctx.Done():
+		p.progressTracker.SetError(ctx.Err())
 		return nil, ctx.Err()
 	default:
 	}
 
 	// Step 4: Split tracks
+	p.progressTracker.UpdateProgress(progress.StageProcessing, 60, "Processing tracks...", nil)
 	results, err := p.processTracks(ctx, procCtx)
 	if err != nil {
+		p.progressTracker.SetError(err)
 		return nil, err
 	}
 
+	p.progressTracker.UpdateProgress(progress.StageComplete, 100, "Processing completed", nil)
 	return results, nil
 }
 
@@ -237,12 +255,12 @@ func (p *processor) importTracklist(ctx *processingContext) error {
 	}
 
 	// Report progress
+	p.progressTracker.UpdateProgress(progress.StageImporting, 100, "Tracklist imported", jsonData)
 	ctx.progressCallback(10, "Got tracklist", jsonData)
 	return nil
 }
 
 func (p *processor) downloadSet(ctx context.Context, procCtx *processingContext) error {
-
 	input := strings.TrimSpace(procCtx.opts.Query)
 	url, err := p.setDownloader.FindURL(ctx, input)
 	if err != nil {
@@ -261,8 +279,9 @@ func (p *processor) downloadSet(ctx context.Context, procCtx *processingContext)
 	}
 
 	// Download the set - we'll let the downloader determine the extension
-	err = p.setDownloader.Download(ctx, url, sanitizedSetName, downloadDir, func(progress int, message string) {
-		adjustedProgress := 10 + ((progress * 40) / 100)
+	err = p.setDownloader.Download(ctx, url, sanitizedSetName, downloadDir, func(prog int, message string) {
+		adjustedProgress := 10 + ((prog * 40) / 100)
+		p.progressTracker.UpdateProgress(progress.StageDownloading, float64(adjustedProgress), message, nil)
 		procCtx.progressCallback(adjustedProgress, message, nil)
 	})
 	if err != nil {
@@ -312,8 +331,10 @@ func (p *processor) prepareForProcessing(ctx context.Context, procCtx *processin
 	}
 
 	if len(file) > 0 {
+		p.progressTracker.UpdateProgress(progress.StageProcessing, 50, "Cover art extracted", file)
 		procCtx.progressCallback(50, "Cover art extracted", file)
 	} else {
+		p.progressTracker.UpdateProgress(progress.StageProcessing, 50, "Cover art not found", nil)
 		procCtx.progressCallback(50, "Cover art not found", nil)
 	}
 
@@ -601,5 +622,14 @@ func (p *processor) updateTrackProgress(
 	trackProgress := int((float64(newCount) / float64(setLength)) * 100)
 	totalProgress := 50 + (trackProgress / 2) // Scale to 50-100%
 	_ = bar.Add(1)
+
+	// Update progress tracker
+	p.progressTracker.UpdateTrackProgress(
+		int(newCount),
+		setLength,
+		int(newCount),
+		fmt.Sprintf("Track %d/%d", newCount, setLength),
+	)
+
 	progressCallback(totalProgress, fmt.Sprintf("Processed %d/%d tracks", newCount, setLength), nil)
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jaki95/dj-set-downloader/internal/audio"
 	"github.com/jaki95/dj-set-downloader/internal/domain"
+	"github.com/jaki95/dj-set-downloader/internal/progress"
 	"github.com/schollz/progressbar/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -184,6 +185,7 @@ func setupTestProcessor() (*processor, *MockTracklistImporter, *MockDownloader, 
 		tracklistImporter: mockImporter,
 		setDownloader:     mockDownloader,
 		audioProcessor:    mockAudioProcessor,
+		progressTracker:   progress.NewProgressTracker(),
 	}
 
 	return p, mockImporter, mockDownloader, mockAudioProcessor, mockStorage
@@ -657,7 +659,8 @@ func TestProcessTracks(t *testing.T) {
 	})).Return(nil)
 
 	p := &processor{
-		audioProcessor: mockAudioProcessor,
+		audioProcessor:  mockAudioProcessor,
+		progressTracker: progress.NewProgressTracker(),
 	}
 
 	results, err := p.processTracks(context.Background(), ctx)
@@ -700,7 +703,8 @@ func TestPrepareForProcessing(t *testing.T) {
 	mockAudioProcessor.On("ExtractCoverArt", mock.Anything, inputFilePath, expectedCoverArtPath).Return(nil)
 
 	p := &processor{
-		audioProcessor: mockAudioProcessor,
+		audioProcessor:  mockAudioProcessor,
+		progressTracker: progress.NewProgressTracker(),
 	}
 
 	err = p.prepareForProcessing(context.Background(), procCtx)
