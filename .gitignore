@@ -4,3 +4,5 @@ cache/
 cookies.json
 
 .DS_Store
+
+*.mdc
