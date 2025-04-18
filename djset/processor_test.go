@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jaki95/dj-set-downloader/config"
 	"github.com/jaki95/dj-set-downloader/internal/audio"
 	"github.com/jaki95/dj-set-downloader/internal/domain"
 	"github.com/jaki95/dj-set-downloader/internal/progress"
@@ -836,4 +837,26 @@ func TestProcessTracksGracefulShutdown(t *testing.T) {
 	mockImporter.AssertExpectations(t)
 	mockDownloader.AssertExpectations(t)
 	mockAudioProcessor.AssertExpectations(t)
+}
+
+func TestNewProcessor(t *testing.T) {
+	cleanup := setupTestEnv()
+	defer cleanup()
+
+	// Create a test config
+	cfg := &config.Config{
+		AudioProcessor: "ffmpeg",
+		AudioSource:    "soundcloud", // Add a valid audio source
+	}
+
+	// Test
+	p, err := NewProcessor(cfg)
+
+	// Assert
+	assert.NoError(t, err)
+	assert.NotNil(t, p)
+	assert.NotNil(t, p.(*processor).tracklistImporter)
+	assert.NotNil(t, p.(*processor).setDownloader)
+	assert.NotNil(t, p.(*processor).audioProcessor)
+	assert.NotNil(t, p.(*processor).progressTracker)
 }

@@ -41,9 +41,5 @@ func NewProcessor(cfg *config.Config) (Processor, error) {
 		return nil, fmt.Errorf("unsupported audio processor: %s", processorType)
 	}
 
-	return &processor{
-		tracklistImporter: trackImporter,
-		setDownloader:     setDownloader,
-		audioProcessor:    audioProcessor,
-	}, nil
+	return New(trackImporter, setDownloader, audioProcessor), nil
 }
