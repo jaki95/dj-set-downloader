@@ -14,7 +14,7 @@ import (
 type _1001TracklistsSearcher struct {
 	searchClient search.GoogleClient
 	cfg          *config.Config
-	importer     tracklist.Importer
+	scraper      tracklist.Scraper
 
 	// Cache for search results
 	mu      sync.RWMutex
@@ -27,15 +27,15 @@ func New1001TracklistsSearcher(cfg *config.Config) (*_1001TracklistsSearcher, er
 		return nil, fmt.Errorf("failed to create Google search client: %v", err)
 	}
 
-	importer, err := tracklist.New1001TracklistsImporter(searchClient)
+	scraper, err := tracklist.New1001TracklistsScraper(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create tracklist importer: %v", err)
+		return nil, fmt.Errorf("failed to create tracklist scraper: %v", err)
 	}
 
 	return &_1001TracklistsSearcher{
 		searchClient: searchClient,
 		cfg:          cfg,
-		importer:     importer,
+		scraper:      scraper,
 	}, nil
 }
 
@@ -84,6 +84,6 @@ func (s *_1001TracklistsSearcher) GetTracklist(ctx context.Context, resultID str
 		return nil, fmt.Errorf("result not found")
 	}
 
-	// Use the existing importer to get the tracklist
-	return s.importer.Import(ctx, results[index].Link)
+	// Use the existing scraper to get the tracklist
+	return s.scraper.Scrape(ctx, results[index].Link)
 }

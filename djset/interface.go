@@ -16,9 +16,9 @@ type Processor interface {
 
 func NewProcessor(cfg *config.Config) (Processor, error) {
 	// Create the track importer
-	trackImporter, err := tracklist.NewImporter(cfg)
+	trackScraper, err := tracklist.NewScraper(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create tracklist importer: %w", err)
+		return nil, fmt.Errorf("failed to create tracklist scraper: %w", err)
 	}
 
 	// Create the downloader
@@ -41,5 +41,5 @@ func NewProcessor(cfg *config.Config) (Processor, error) {
 		return nil, fmt.Errorf("unsupported audio processor: %s", processorType)
 	}
 
-	return New(trackImporter, setDownloader, audioProcessor), nil
+	return New(trackScraper, setDownloader, audioProcessor), nil
 }

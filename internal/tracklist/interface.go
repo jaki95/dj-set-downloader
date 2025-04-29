@@ -6,65 +6,51 @@ import (
 
 	"github.com/jaki95/dj-set-downloader/config"
 	"github.com/jaki95/dj-set-downloader/internal/domain"
-	"github.com/jaki95/dj-set-downloader/internal/search"
 )
 
-// Importer imports a tracklist from a given source.
-type Importer interface {
-	Import(ctx context.Context, source string) (*domain.Tracklist, error)
+// Scraper scrapes a tracklist from a given source.
+type Scraper interface {
+	Scrape(ctx context.Context, source string) (*domain.Tracklist, error)
 	Name() string
 }
 
-const (
-	Source1001Tracklists = "1001tracklists"
-	CSVTracklist         = "csv"
-	TrackIDsTracklist    = "trackids"
-)
-
-// CompositeImporter tries multiple importers in sequence until one succeeds
-type CompositeImporter struct {
-	importers []Importer
+// CompositeScraper tries multiple scrapers in sequence until one succeeds
+type CompositeScraper struct {
+	scrapers []Scraper
 }
 
-func (c *CompositeImporter) Name() string {
+func (c *CompositeScraper) Name() string {
 	return "composite"
 }
 
-func NewCompositeImporter() (*CompositeImporter, error) {
-	// Create Google search client
-	searchClient, err := search.NewGoogleClient()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Google search client: %v", err)
-	}
-
+func NewCompositeScraper(config *config.Config) (*CompositeScraper, error) {
 	// Create 1001Tracklists importer with the search client
-	importer, err := New1001TracklistsImporter(searchClient)
+	scraper, err := New1001TracklistsScraper(config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create 1001tracklists importer: %v", err)
 	}
 
-	return &CompositeImporter{
-		importers: []Importer{
-			importer,
-			NewTrackIDImporter(),
-			NewCSVImporter(),
+	return &CompositeScraper{
+		scrapers: []Scraper{
+			scraper,
+			NewTrackIDScraper(),
 		},
 	}, nil
 }
 
-func (c *CompositeImporter) Import(ctx context.Context, source string) (*domain.Tracklist, error) {
+func (c *CompositeScraper) Scrape(ctx context.Context, source string) (*domain.Tracklist, error) {
 	var errors []error
-	for _, importer := range c.importers {
-		tracklist, err := importer.Import(ctx, source)
+	for _, scraper := range c.scrapers {
+		tracklist, err := scraper.Scrape(ctx, source)
 		if err == nil {
 			return tracklist, nil
 		}
-		errors = append(errors, fmt.Errorf("%s: %v", importer.Name(), err))
+		errors = append(errors, fmt.Errorf("%s: %v", scraper.Name(), err))
 	}
-	return nil, fmt.Errorf("all importers failed: %v", errors)
+	return nil, fmt.Errorf("all scrapers failed: %v", errors)
 }
 
-func NewImporter(config *config.Config) (Importer, error) {
-	// Always use the composite importer to try multiple sources
-	return NewCompositeImporter()
+func NewScraper(config *config.Config) (Scraper, error) {
+	// Always use the composite scraper to try multiple sources
+	return NewCompositeScraper(config)
 }

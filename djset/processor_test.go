@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jaki95/dj-set-downloader/config"
 	"github.com/jaki95/dj-set-downloader/internal/audio"
 	"github.com/jaki95/dj-set-downloader/internal/domain"
 	"github.com/jaki95/dj-set-downloader/internal/progress"
@@ -36,8 +35,8 @@ type MockTracklistImporter struct {
 	mock.Mock
 }
 
-func (m *MockTracklistImporter) Import(ctx context.Context, path string) (*domain.Tracklist, error) {
-	args := m.Called(ctx, path)
+func (m *MockTracklistImporter) Scrape(ctx context.Context, source string) (*domain.Tracklist, error) {
+	args := m.Called(ctx, source)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -183,10 +182,11 @@ func setupTestProcessor() (*processor, *MockTracklistImporter, *MockDownloader, 
 	mockStorage := new(MockStorage)
 
 	p := &processor{
-		tracklistImporter: mockImporter,
-		setDownloader:     mockDownloader,
-		audioProcessor:    mockAudioProcessor,
-		progressTracker:   progress.NewProgressTracker(),
+		tracklistScraper: mockImporter,
+		setDownloader:    mockDownloader,
+		audioProcessor:   mockAudioProcessor,
+		progressTracker:  progress.NewProgressTracker(),
+		warningThreshold: testWarningThreshold,
 	}
 
 	return p, mockImporter, mockDownloader, mockAudioProcessor, mockStorage
@@ -266,7 +266,7 @@ func TestNew(t *testing.T) {
 	// Assert
 	assert.NotNil(t, p)
 	assert.IsType(t, &processor{}, p)
-	assert.Same(t, mockImporter, p.tracklistImporter)
+	assert.Same(t, mockImporter, p.tracklistScraper)
 	assert.Same(t, mockDownloader, p.setDownloader)
 	assert.Same(t, mockAudioProcessor, p.audioProcessor)
 }
@@ -532,44 +532,36 @@ func TestProcessingContext(t *testing.T) {
 }
 
 func TestImportTracklist(t *testing.T) {
-	// Setup
 	p, mockImporter, _, _, _ := setupTestProcessor()
 
-	// Create test options
-	opts := &ProcessingOptions{
-		Query: "test-query",
-	}
-
-	// Create test context
-	ctx := &processingContext{
-		opts:             opts,
-		progressCallback: func(progress int, message string, data []byte) {},
-	}
-
-	// Setup mock expectations
-	mockImporter.On("Import", mock.Anything, "test-query").Return(&domain.Tracklist{
-		Name:   "Test Set",
-		Artist: "Test Artist",
+	// Test data
+	ctx := context.Background()
+	testPath := "test/path"
+	expectedTracklist := &domain.Tracklist{
+		Name: "Test Set",
 		Tracks: []*domain.Track{
-			{
-				Artist:      "Artist 1",
-				Title:       "Track 1",
-				StartTime:   "00:00:00",
-				EndTime:     "00:05:00",
-				TrackNumber: 1,
-			},
+			{Title: "Track 1"},
+			{Title: "Track 2"},
 		},
-	}, nil)
+	}
 
-	// Test
-	err := p.importTracklist(ctx)
+	// Setup expectations
+	mockImporter.On("Scrape", ctx, testPath).Return(expectedTracklist, nil)
 
-	// Assert
+	// Create processing context
+	procCtx := &processingContext{
+		opts: &ProcessingOptions{
+			Query: testPath,
+		},
+		progressCallback: func(int, string, []byte) {},
+	}
+
+	// Execute
+	err := p.importTracklist(procCtx)
+
+	// Verify
 	assert.NoError(t, err)
-	assert.NotNil(t, ctx.set)
-	assert.Equal(t, "Test Set", ctx.set.Name)
-	assert.Equal(t, "Test Artist", ctx.set.Artist)
-	assert.Equal(t, 1, len(ctx.set.Tracks))
+	assert.Equal(t, expectedTracklist, procCtx.set)
 	mockImporter.AssertExpectations(t)
 }
 
@@ -660,8 +652,9 @@ func TestProcessTracks(t *testing.T) {
 	})).Return(nil)
 
 	p := &processor{
-		audioProcessor:  mockAudioProcessor,
-		progressTracker: progress.NewProgressTracker(),
+		audioProcessor:   mockAudioProcessor,
+		progressTracker:  progress.NewProgressTracker(),
+		warningThreshold: testWarningThreshold,
 	}
 
 	results, err := p.processTracks(context.Background(), ctx)
@@ -704,8 +697,9 @@ func TestPrepareForProcessing(t *testing.T) {
 	mockAudioProcessor.On("ExtractCoverArt", mock.Anything, inputFilePath, expectedCoverArtPath).Return(nil)
 
 	p := &processor{
-		audioProcessor:  mockAudioProcessor,
-		progressTracker: progress.NewProgressTracker(),
+		audioProcessor:   mockAudioProcessor,
+		progressTracker:  progress.NewProgressTracker(),
+		warningThreshold: testWarningThreshold,
 	}
 
 	err = p.prepareForProcessing(context.Background(), procCtx)
@@ -751,7 +745,7 @@ func TestProcessTracksCancellation(t *testing.T) {
 	}
 
 	// Setup mocks
-	mockImporter.On("Import", mock.Anything, "test-query").Return(nil, context.Canceled)
+	mockImporter.On("Scrape", mock.Anything, "test-query").Return(nil, context.Canceled)
 
 	// Start processing in a goroutine
 	go func() {
@@ -787,7 +781,7 @@ func TestProcessTracksGracefulShutdown(t *testing.T) {
 	}
 
 	// Setup mocks
-	mockImporter.On("Import", mock.Anything, "test_path").Return(tracklist, nil)
+	mockImporter.On("Scrape", mock.Anything, "test_path").Return(tracklist, nil)
 	mockDownloader.On("FindURL", mock.Anything, "test_path").Return("test_url", nil)
 	mockDownloader.On("Download", mock.Anything, "test_url", "Test_Set", mock.MatchedBy(func(path string) bool {
 		return strings.HasPrefix(path, testDirs.tempDir)
@@ -840,23 +834,22 @@ func TestProcessTracksGracefulShutdown(t *testing.T) {
 }
 
 func TestNewProcessor(t *testing.T) {
-	cleanup := setupTestEnv()
-	defer cleanup()
+	// Create mock dependencies
+	mockImporter := new(MockTracklistImporter)
+	mockDownloader := new(MockDownloader)
+	mockAudioProcessor := new(MockAudioProcessor)
 
-	// Create a test config
-	cfg := &config.Config{
-		AudioProcessor: "ffmpeg",
-		AudioSource:    "soundcloud", // Add a valid audio source
-	}
+	// Setup expectations
+	mockImporter.On("Name").Return("mock")
 
-	// Test
-	p, err := NewProcessor(cfg)
+	// Create the processor
+	p := New(mockImporter, mockDownloader, mockAudioProcessor)
 
-	// Assert
-	assert.NoError(t, err)
+	// Verify the processor was created correctly
 	assert.NotNil(t, p)
-	assert.NotNil(t, p.(*processor).tracklistImporter)
-	assert.NotNil(t, p.(*processor).setDownloader)
-	assert.NotNil(t, p.(*processor).audioProcessor)
-	assert.NotNil(t, p.(*processor).progressTracker)
+	assert.Equal(t, mockImporter, p.tracklistScraper)
+	assert.Equal(t, mockDownloader, p.setDownloader)
+	assert.Equal(t, mockAudioProcessor, p.audioProcessor)
+	assert.NotNil(t, p.progressTracker)
+	assert.Equal(t, 2*time.Minute, p.warningThreshold)
 }

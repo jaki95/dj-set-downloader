@@ -11,19 +11,18 @@ import (
 
 func Test1001TracklistsSearcher(t *testing.T) {
 	// Create a test configuration
-	cfg := &config.Config{
-		// Add any necessary configuration here
-	}
+	cfg := &config.Config{}
 
 	// Create the searcher
 	searcher, err := New1001TracklistsSearcher(cfg)
 	require.NoError(t, err)
 
+	searchQuery := "charlotte de witte tomorrowland 2024"
+
 	t.Run("Search", func(t *testing.T) {
 		ctx := context.Background()
-		query := "test dj set"
 
-		results, err := searcher.Search(ctx, query)
+		results, err := searcher.Search(ctx, searchQuery)
 		require.NoError(t, err)
 		assert.NotEmpty(t, results)
 
@@ -40,7 +39,7 @@ func Test1001TracklistsSearcher(t *testing.T) {
 		ctx := context.Background()
 
 		// First get a valid result ID
-		results, err := searcher.Search(ctx, "charlotte de witte tomorrowland 2024")
+		results, err := searcher.Search(ctx, searchQuery)
 		require.NoError(t, err)
 		require.NotEmpty(t, results)
 
