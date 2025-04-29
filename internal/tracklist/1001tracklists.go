@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -58,9 +59,21 @@ func New1001TracklistsImporter(searchClient search.GoogleClient) (*tracklists100
 	}, nil
 }
 
-func (i *tracklists1001Importer) Import(ctx context.Context, query string) (*domain.Tracklist, error) {
-	slog.Info("Importing tracklist", "query", query)
+func (i *tracklists1001Importer) Import(ctx context.Context, source string) (*domain.Tracklist, error) {
+	slog.Info("Importing tracklist", "source", source)
 
+	// Check if the source is a URL
+	u, err := url.Parse(source)
+	if err == nil && u.Scheme != "" && u.Host != "" {
+		// It's a URL, try to scrape it directly
+		return i.scrapeFromURL(ctx, source)
+	}
+
+	// Not a URL, treat it as a search query
+	return i.scrapeFromSearch(ctx, source)
+}
+
+func (i *tracklists1001Importer) scrapeFromSearch(ctx context.Context, query string) (*domain.Tracklist, error) {
 	// First try to find the tracklist URL using Google search
 	searchQuery := fmt.Sprintf("site:1001tracklists.com %s", query)
 	results, err := i.searchClient.Search(ctx, searchQuery, "1001tracklists")
@@ -72,18 +85,22 @@ func (i *tracklists1001Importer) Import(ctx context.Context, query string) (*dom
 		return nil, fmt.Errorf("no tracklist found for query: %s", query)
 	}
 
+	return i.scrapeFromURL(ctx, results[0].Link)
+}
+
+func (i *tracklists1001Importer) scrapeFromURL(ctx context.Context, url string) (*domain.Tracklist, error) {
 	// Check if we have a cached version of this tracklist
-	cacheFile := filepath.Join(i.cacheDir, fmt.Sprintf("%x.json", results[0].Link))
+	cacheFile := filepath.Join(i.cacheDir, fmt.Sprintf("%x.json", url))
 	if data, err := os.ReadFile(cacheFile); err == nil {
 		var cachedTracklist domain.Tracklist
 		if err := json.Unmarshal(data, &cachedTracklist); err == nil {
-			slog.Debug("Using cached tracklist", "url", results[0].Link)
+			slog.Debug("Using cached tracklist", "url", url)
 			return &cachedTracklist, nil
 		}
 	}
 
 	// If not cached, scrape the tracklist
-	tracklist, err := i.scrapeWithColly(ctx, results[0].Link)
+	tracklist, err := i.scrapeWithColly(ctx, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scrape tracklist: %w", err)
 	}
