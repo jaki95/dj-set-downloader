@@ -51,6 +51,11 @@ jobs:
     - name: Run tests
       env:
         SOUNDCLOUD_CLIENT_ID: "test_client_id_for_ci"
+        GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        GOOGLE_SEARCH_ID_1001TRACKLISTS: ${{ secrets.GOOGLE_SEARCH_ID_1001TRACKLISTS }}
+        GOOGLE_SEARCH_ID_SOUNDCLOUD: ${{ secrets.GOOGLE_SEARCH_ID_SOUNDCLOUD }}
+        GOOGLE_SEARCH_ID_TRACKID: ${{ secrets.GOOGLE_SEARCH_ID_TRACKID }}
+
       run: go test -short -v -race -coverprofile=coverage.out ./...
       
     - name: Upload coverage to Codecov
