@@ -51,6 +51,12 @@ func (c *CompositeScraper) Scrape(ctx context.Context, source string) (*domain.T
 }
 
 func NewScraper(config *config.Config) (Scraper, error) {
-	// Always use the composite scraper to try multiple sources
-	return NewCompositeScraper(config)
+	switch config.TracklistSource {
+	case "1001tracklists":
+		return New1001TracklistsScraper(config)
+	case "trackid":
+		return NewTrackIDScraper(), nil
+	default:
+		return NewCompositeScraper(config)
+	}
 }

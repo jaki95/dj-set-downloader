@@ -46,7 +46,12 @@ func (t *TrackIDScraper) Scrape(ctx context.Context, tracklistUrl string) (*doma
 		return nil, fmt.Errorf("invalid url: %s", tracklistUrl)
 	}
 
-	resp, err := t.fetchTrackData(ctx, tracklistUrl)
+	transformedUrl, err := transformURL(*u)
+	if err != nil {
+		return nil, fmt.Errorf("failed to transform url: %w", err)
+	}
+
+	resp, err := t.fetchTrackData(ctx, transformedUrl)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch track data: %w", err)
 	}
@@ -61,6 +66,18 @@ func (t *TrackIDScraper) Scrape(ctx context.Context, tracklistUrl string) (*doma
 	}
 
 	return tracklist, nil
+}
+
+func transformURL(parsedUrl url.URL) (string, error) {
+	// Change the host to include port
+	parsedUrl.Host = parsedUrl.Hostname() + ":8001"
+
+	// Prepend "/api/public" to the path
+	if !strings.HasPrefix(parsedUrl.Path, "/api/public") {
+		parsedUrl.Path = "/api/public" + parsedUrl.Path
+	}
+
+	return parsedUrl.String(), nil
 }
 
 func (t *TrackIDScraper) fetchTrackData(ctx context.Context, tracklistUrl string) (*trackIDResponse, error) {

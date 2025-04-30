@@ -27,7 +27,5 @@ type Searcher interface {
 
 // NewSearcher creates a new Searcher instance based on the configuration
 func NewSearcher(cfg *config.Config) (Searcher, error) {
-	// For now, we'll use the 1001Tracklists implementation
-	// TODO: Add support for other sources based on configuration
-	return New1001TracklistsSearcher(cfg)
+	return NewWebsiteSearcher(cfg, cfg.TracklistWebsite, cfg.TracklistSource)
 }

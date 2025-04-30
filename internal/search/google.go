@@ -29,6 +29,7 @@ func NewGoogleClient() (GoogleClient, error) {
 	apiKey := os.Getenv("GOOGLE_API_KEY")
 	searchEngines := map[string]string{
 		"1001tracklists": os.Getenv("GOOGLE_SEARCH_ID_1001TRACKLISTS"),
+		"trackid":        os.Getenv("GOOGLE_SEARCH_ID_TRACKID"),
 		"soundcloud":     os.Getenv("GOOGLE_SEARCH_ID_SOUNDCLOUD"),
 	}
 
@@ -45,7 +46,7 @@ func NewGoogleClient() (GoogleClient, error) {
 		}
 	}
 	if !hasValidEngine {
-		return nil, fmt.Errorf("at least one search engine ID must be configured (GOOGLE_SEARCH_ID_1001TRACKLISTS or GOOGLE_SEARCH_ID_SOUNDCLOUD)")
+		return nil, fmt.Errorf("at least one search engine ID must be configured (GOOGLE_SEARCH_ID_1001TRACKLISTS, GOOGLE_SEARCH_ID_TRACKID, or GOOGLE_SEARCH_ID_SOUNDCLOUD)")
 	}
 
 	ctx := context.Background()
