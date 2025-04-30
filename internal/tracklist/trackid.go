@@ -15,9 +15,7 @@ import (
 	"github.com/jaki95/dj-set-downloader/internal/domain"
 )
 
-type TrackIDImporter struct {
-	baseURL   string
-	searchURL string
+type TrackIDScraper struct {
 }
 
 type trackIDResponse struct {
@@ -30,40 +28,30 @@ type trackIDResponse struct {
 	} `json:"result"`
 }
 
-type trackIDSearchResponse struct {
-	Result struct {
-		Audiostreams []struct {
-			Slug  string `json:"slug"`
-			Title string `json:"title"`
-		} `json:"audiostreams"`
-		RowCount int `json:"rowCount"`
-	} `json:"result"`
+func NewTrackIDScraper() *TrackIDScraper {
+	return &TrackIDScraper{}
 }
 
-func NewTrackIDImporter() *TrackIDImporter {
-	return &TrackIDImporter{
-		baseURL:   "https://trackid.net:8001/api/public/audiostreams/",
-		searchURL: "https://trackid.net:8001/api/public/audiostreams",
-	}
-}
-
-func (t *TrackIDImporter) Name() string {
+func (t *TrackIDScraper) Name() string {
 	return "trackid"
 }
 
-func (t *TrackIDImporter) Import(ctx context.Context, keywords string) (*domain.Tracklist, error) {
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	default:
+func (t *TrackIDScraper) Scrape(ctx context.Context, tracklistUrl string) (*domain.Tracklist, error) {
+	slog.Info("Importing tracklist", "url", tracklistUrl)
+
+	// Check if the URL is valid
+	u, err := url.Parse(tracklistUrl)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		// Not a URL, error
+		return nil, fmt.Errorf("invalid url: %s", tracklistUrl)
 	}
 
-	slug, err := t.findSlug(ctx, keywords)
+	transformedUrl, err := transformURL(*u)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find slug: %w", err)
+		return nil, fmt.Errorf("failed to transform url: %w", err)
 	}
 
-	resp, err := t.fetchTrackData(ctx, slug)
+	resp, err := t.fetchTrackData(ctx, transformedUrl)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch track data: %w", err)
 	}
@@ -80,66 +68,20 @@ func (t *TrackIDImporter) Import(ctx context.Context, keywords string) (*domain.
 	return tracklist, nil
 }
 
-func (t *TrackIDImporter) findSlug(ctx context.Context, keywords string) (string, error) {
-	select {
-	case <-ctx.Done():
-		return "", ctx.Err()
-	default:
+func transformURL(parsedUrl url.URL) (string, error) {
+	// Change the host to include port
+	parsedUrl.Host = parsedUrl.Hostname() + ":8001"
+
+	// Prepend "/api/public" to the path
+	if !strings.HasPrefix(parsedUrl.Path, "/api/public") {
+		parsedUrl.Path = "/api/public" + parsedUrl.Path
 	}
 
-	params := url.Values{}
-	params.Add("keywords", keywords)
-	params.Add("pageSize", "20")
-	params.Add("currentPage", "0")
-	params.Add("status", "3")
-
-	url := t.searchURL + "?" + params.Encode()
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create search request: %w", err)
-	}
-
-	t.setCommonHeaders(req)
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to fetch search results: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read search response body: %w", err)
-	}
-
-	var searchResp trackIDSearchResponse
-	if err := json.Unmarshal(body, &searchResp); err != nil {
-		return "", fmt.Errorf("failed to unmarshal search JSON: %w", err)
-	}
-
-	if searchResp.Result.RowCount == 0 {
-		return "", fmt.Errorf("no matching audiostreams found for keywords: %s", keywords)
-	}
-
-	slug := searchResp.Result.Audiostreams[0].Slug
-	slog.Debug("Found audiostream",
-		"keywords", keywords,
-		"slug", slug,
-		"title", searchResp.Result.Audiostreams[0].Title)
-
-	return slug, nil
+	return parsedUrl.String(), nil
 }
 
-func (t *TrackIDImporter) fetchTrackData(ctx context.Context, slug string) (*trackIDResponse, error) {
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	default:
-	}
-
-	url := t.baseURL + slug
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+func (t *TrackIDScraper) fetchTrackData(ctx context.Context, tracklistUrl string) (*trackIDResponse, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", tracklistUrl, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create track data request: %w", err)
 	}
@@ -166,12 +108,12 @@ func (t *TrackIDImporter) fetchTrackData(ctx context.Context, slug string) (*tra
 	return &trackResp, nil
 }
 
-func (t *TrackIDImporter) setCommonHeaders(req *http.Request) {
+func (t *TrackIDScraper) setCommonHeaders(req *http.Request) {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "dj-set-downloader/1.0")
 }
 
-func (t *TrackIDImporter) parseTracklist(resp *trackIDResponse) (*domain.Tracklist, error) {
+func (t *TrackIDScraper) parseTracklist(resp *trackIDResponse) (*domain.Tracklist, error) {
 	title := resp.Result.Title
 	artist := inferArtistFromTitle(title)
 
@@ -209,7 +151,7 @@ func (t *TrackIDImporter) parseTracklist(resp *trackIDResponse) (*domain.Trackli
 	return tracklist, nil
 }
 
-func (t *TrackIDImporter) processFirstTrack(tracklist *domain.Tracklist, firstTrack domain.Track, trackCounter *int, previousEndTime *string) error {
+func (t *TrackIDScraper) processFirstTrack(tracklist *domain.Tracklist, firstTrack domain.Track, trackCounter *int, previousEndTime *string) error {
 	if firstTrack.StartTime != "00:00:00" {
 		t.addIDTrack(tracklist, "00:00:00", firstTrack.StartTime, *trackCounter)
 		*trackCounter++
@@ -221,7 +163,7 @@ func (t *TrackIDImporter) processFirstTrack(tracklist *domain.Tracklist, firstTr
 	return nil
 }
 
-func (t *TrackIDImporter) handleTrackGap(tracklist *domain.Tracklist, previousEndTime, startTime string, trackCounter *int) {
+func (t *TrackIDScraper) handleTrackGap(tracklist *domain.Tracklist, previousEndTime, startTime string, trackCounter *int) {
 	if previousEndTime == "" {
 		return
 	}
@@ -249,7 +191,7 @@ func (t *TrackIDImporter) handleTrackGap(tracklist *domain.Tracklist, previousEn
 	}
 }
 
-func (t *TrackIDImporter) handleFinalGap(tracklist *domain.Tracklist, previousEndTime, totalDuration string, trackCounter *int) error {
+func (t *TrackIDScraper) handleFinalGap(tracklist *domain.Tracklist, previousEndTime, totalDuration string, trackCounter *int) error {
 	if previousEndTime == "" || previousEndTime == totalDuration {
 		return nil
 	}
@@ -271,7 +213,7 @@ func (t *TrackIDImporter) handleFinalGap(tracklist *domain.Tracklist, previousEn
 	return nil
 }
 
-func (t *TrackIDImporter) addTrack(tracklist *domain.Tracklist, artist, title, startTime, endTime string, trackNumber int) {
+func (t *TrackIDScraper) addTrack(tracklist *domain.Tracklist, artist, title, startTime, endTime string, trackNumber int) {
 	tracklist.Tracks = append(tracklist.Tracks, &domain.Track{
 		Artist:      artist,
 		Title:       title,
@@ -281,14 +223,14 @@ func (t *TrackIDImporter) addTrack(tracklist *domain.Tracklist, artist, title, s
 	})
 }
 
-func (t *TrackIDImporter) addIDTrack(tracklist *domain.Tracklist, startTime, endTime string, trackNumber int) {
+func (t *TrackIDScraper) addIDTrack(tracklist *domain.Tracklist, startTime, endTime string, trackNumber int) {
 	t.addTrack(tracklist, "ID", "ID", startTime, endTime, trackNumber)
 	slog.Debug("ID track added",
 		"start", startTime,
 		"end", endTime)
 }
 
-func (t *TrackIDImporter) calculateDuration(startTime, endTime string) int {
+func (t *TrackIDScraper) calculateDuration(startTime, endTime string) int {
 	start := t.parseTime(startTime)
 	end := t.parseTime(endTime)
 	if start.IsZero() || end.IsZero() {
@@ -297,7 +239,7 @@ func (t *TrackIDImporter) calculateDuration(startTime, endTime string) int {
 	return int(end.Sub(start).Seconds())
 }
 
-func (t *TrackIDImporter) parseTime(timeStr string) time.Time {
+func (t *TrackIDScraper) parseTime(timeStr string) time.Time {
 	parts := strings.Split(timeStr, ".")
 	timeParts := strings.Split(parts[0], ":")
 	if len(timeParts) != 3 {
@@ -311,7 +253,7 @@ func (t *TrackIDImporter) parseTime(timeStr string) time.Time {
 	return time.Date(0, 1, 1, hours, minutes, seconds, 0, time.UTC)
 }
 
-func (t *TrackIDImporter) calculateMidpoint(startTime, endTime string) string {
+func (t *TrackIDScraper) calculateMidpoint(startTime, endTime string) string {
 	start := t.parseTime(startTime)
 	end := t.parseTime(endTime)
 	duration := end.Sub(start)

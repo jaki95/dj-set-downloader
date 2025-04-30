@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -14,12 +15,11 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly"
+	"github.com/jaki95/dj-set-downloader/config"
 	"github.com/jaki95/dj-set-downloader/internal/domain"
-	"github.com/jaki95/dj-set-downloader/internal/search"
 )
 
-type tracklists1001Importer struct {
-	searchClient    search.GoogleClient
+type _1001TracklistsScraper struct {
 	cacheDir        string
 	cacheTTL        time.Duration
 	maxRetries      int
@@ -29,22 +29,23 @@ type tracklists1001Importer struct {
 	lastRequestTime time.Time
 }
 
-func (t *tracklists1001Importer) Name() string {
+func (t *_1001TracklistsScraper) Name() string {
 	return "1001tracklists"
 }
 
-func New1001TracklistsImporter(searchClient search.GoogleClient) (*tracklists1001Importer, error) {
+func New1001TracklistsScraper(config *config.Config) (*_1001TracklistsScraper, error) {
 	cacheDir := filepath.Join(os.TempDir(), "dj-set-downloader", "1001tracklists")
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
-	return &tracklists1001Importer{
-		searchClient: searchClient,
-		cacheDir:     cacheDir,
-		cacheTTL:     24 * time.Hour,
-		maxRetries:   4,
-		baseDelay:    2 * time.Second,
+	cookieFile := "./cookies.json"
+
+	return &_1001TracklistsScraper{
+		cacheDir:   cacheDir,
+		cacheTTL:   24 * time.Hour,
+		maxRetries: 4,
+		baseDelay:  2 * time.Second,
 		userAgents: []string{
 			"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 			"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -53,37 +54,33 @@ func New1001TracklistsImporter(searchClient search.GoogleClient) (*tracklists100
 			"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/120.0",
 			"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15",
 		},
-		cookieFile:      "./cookies.json",
+		cookieFile:      cookieFile,
 		lastRequestTime: time.Now(),
 	}, nil
 }
 
-func (i *tracklists1001Importer) Import(ctx context.Context, query string) (*domain.Tracklist, error) {
-	slog.Info("Importing tracklist", "query", query)
+func (s *_1001TracklistsScraper) Scrape(ctx context.Context, tracklistUrl string) (*domain.Tracklist, error) {
+	slog.Info("Importing tracklist", "url", tracklistUrl)
 
-	// First try to find the tracklist URL using Google search
-	searchQuery := fmt.Sprintf("site:1001tracklists.com %s", query)
-	results, err := i.searchClient.Search(ctx, searchQuery, "1001tracklists")
-	if err != nil {
-		return nil, fmt.Errorf("failed to search for tracklist: %w", err)
-	}
-
-	if len(results) == 0 {
-		return nil, fmt.Errorf("no tracklist found for query: %s", query)
+	// Check if the URL is valid
+	u, err := url.Parse(tracklistUrl)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		// Not a URL, error
+		return nil, fmt.Errorf("invalid url: %s", tracklistUrl)
 	}
 
 	// Check if we have a cached version of this tracklist
-	cacheFile := filepath.Join(i.cacheDir, fmt.Sprintf("%x.json", results[0].Link))
+	cacheFile := filepath.Join(s.cacheDir, fmt.Sprintf("%x.json", tracklistUrl))
 	if data, err := os.ReadFile(cacheFile); err == nil {
 		var cachedTracklist domain.Tracklist
 		if err := json.Unmarshal(data, &cachedTracklist); err == nil {
-			slog.Debug("Using cached tracklist", "url", results[0].Link)
+			slog.Debug("Using cached tracklist", "url", tracklistUrl)
 			return &cachedTracklist, nil
 		}
 	}
 
 	// If not cached, scrape the tracklist
-	tracklist, err := i.scrapeWithColly(ctx, results[0].Link)
+	tracklist, err := s.scrapeWithColly(ctx, tracklistUrl)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scrape tracklist: %w", err)
 	}
@@ -98,14 +95,14 @@ func (i *tracklists1001Importer) Import(ctx context.Context, query string) (*dom
 	return tracklist, nil
 }
 
-func (t *tracklists1001Importer) scrapeWithColly(ctx context.Context, url string) (*domain.Tracklist, error) {
+func (s *_1001TracklistsScraper) scrapeWithColly(ctx context.Context, url string) (*domain.Tracklist, error) {
 	slog.Debug("Starting to scrape tracklist", "url", url)
 	tracklist := &domain.Tracklist{
 		Tracks: make([]*domain.Track, 0),
 	}
 
 	c := colly.NewCollector(
-		colly.UserAgent(t.userAgents[0]),
+		colly.UserAgent(s.userAgents[0]),
 		colly.AllowURLRevisit(),
 		colly.AllowedDomains("www.1001tracklists.com", "1001tracklists.com"),
 	)
@@ -185,7 +182,7 @@ func (t *tracklists1001Importer) scrapeWithColly(ctx context.Context, url string
 	})
 
 	// Visit the URL with retries
-	if err := t.visitWithRetries(ctx, c, url); err != nil {
+	if err := s.visitWithRetries(ctx, c, url); err != nil {
 		return nil, fmt.Errorf("failed to visit URL: %w", err)
 	}
 
@@ -201,9 +198,9 @@ func (t *tracklists1001Importer) scrapeWithColly(ctx context.Context, url string
 	return tracklist, nil
 }
 
-func (t *tracklists1001Importer) visitWithRetries(ctx context.Context, c *colly.Collector, url string) error {
+func (s *_1001TracklistsScraper) visitWithRetries(ctx context.Context, c *colly.Collector, url string) error {
 	var lastErr error
-	for attempt := 0; attempt <= t.maxRetries; attempt++ {
+	for attempt := 0; attempt <= s.maxRetries; attempt++ {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -211,7 +208,7 @@ func (t *tracklists1001Importer) visitWithRetries(ctx context.Context, c *colly.
 		}
 
 		if attempt > 0 {
-			delay := t.baseDelay * time.Duration(1<<uint(attempt))
+			delay := s.baseDelay * time.Duration(1<<uint(attempt))
 			jitter := time.Duration(rand.Int63n(3000)) * time.Millisecond
 			totalDelay := delay + jitter
 			slog.Info("Retrying request", "attempt", attempt+1, "delay", totalDelay.String(), "url", url)
@@ -229,7 +226,7 @@ func (t *tracklists1001Importer) visitWithRetries(ctx context.Context, c *colly.
 		}
 		slog.Warn("Request failed", "attempt", attempt+1, "error", lastErr)
 	}
-	return fmt.Errorf("failed after %d attempts: %w", t.maxRetries, lastErr)
+	return fmt.Errorf("failed after %d attempts: %w", s.maxRetries, lastErr)
 }
 
 func parseTrackValue(trackValue string) (string, string) {

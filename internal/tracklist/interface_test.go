@@ -11,22 +11,22 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// MockImporter implements the Importer interface for testing
-type MockImporter struct {
+// MockScraper implements the Scraper interface for testing
+type MockScraper struct {
 	shouldFail bool
 	tracklist  *domain.Tracklist
 	err        error
 	name       string
 }
 
-func (m *MockImporter) Import(ctx context.Context, source string) (*domain.Tracklist, error) {
+func (m *MockScraper) Scrape(ctx context.Context, source string) (*domain.Tracklist, error) {
 	if m.shouldFail {
 		return nil, m.err
 	}
 	return m.tracklist, nil
 }
 
-func (m *MockImporter) Name() string {
+func (m *MockScraper) Name() string {
 	if m.name == "" {
 		return "mock"
 	}
@@ -63,27 +63,25 @@ func TestNewImporter(t *testing.T) {
 		expectedErrMsg string
 	}{
 		{
-			name: "any config",
-			config: &config.Config{
-				TracklistSource: Source1001Tracklists,
-			},
-			expectedType:   "*tracklist.CompositeImporter",
+			name:           "any config",
+			config:         &config.Config{},
+			expectedType:   "*tracklist.CompositeScraper",
 			expectedErrMsg: "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			importer, err := NewImporter(tt.config)
+			scraper, err := NewScraper(tt.config)
 
 			if tt.expectedErrMsg != "" {
 				assert.Error(t, err)
 				assert.Contains(t, err.Error(), tt.expectedErrMsg)
-				assert.Nil(t, importer)
+				assert.Nil(t, scraper)
 			} else {
 				assert.NoError(t, err)
-				assert.NotNil(t, importer)
-				assert.Equal(t, tt.expectedType, getTypeName(importer))
+				assert.NotNil(t, scraper)
+				assert.Equal(t, tt.expectedType, getTypeName(scraper))
 			}
 		})
 	}
@@ -93,13 +91,14 @@ func TestCompositeImporter(t *testing.T) {
 	cleanup := setupTestEnv()
 	defer cleanup()
 
-	importer, err := NewCompositeImporter()
+	cfg := &config.Config{}
+
+	scraper, err := NewCompositeScraper(cfg)
 	assert.NoError(t, err)
-	assert.NotNil(t, importer)
-	assert.Equal(t, 3, len(importer.importers))
-	assert.Equal(t, "*tracklist.tracklists1001Importer", getTypeName(importer.importers[0]))
-	assert.Equal(t, "*tracklist.TrackIDImporter", getTypeName(importer.importers[1]))
-	assert.Equal(t, "*tracklist.CSVImporter", getTypeName(importer.importers[2]))
+	assert.NotNil(t, scraper)
+	assert.Equal(t, 2, len(scraper.scrapers))
+	assert.Equal(t, "*tracklist._1001TracklistsScraper", getTypeName(scraper.scrapers[0]))
+	assert.Equal(t, "*tracklist.TrackIDScraper", getTypeName(scraper.scrapers[1]))
 }
 
 func TestCompositeImporterFallback(t *testing.T) {
@@ -120,46 +119,46 @@ func TestCompositeImporterFallback(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		importers      []Importer
+		scrapers       []Scraper
 		expectedResult *domain.Tracklist
 		expectError    bool
 	}{
 		{
 			name: "first importer succeeds",
-			importers: []Importer{
-				&MockImporter{tracklist: testTracklist},
-				&MockImporter{shouldFail: true, err: fmt.Errorf("should not be called")},
-				&MockImporter{shouldFail: true, err: fmt.Errorf("should not be called")},
+			scrapers: []Scraper{
+				&MockScraper{tracklist: testTracklist},
+				&MockScraper{shouldFail: true, err: fmt.Errorf("should not be called")},
+				&MockScraper{shouldFail: true, err: fmt.Errorf("should not be called")},
 			},
 			expectedResult: testTracklist,
 			expectError:    false,
 		},
 		{
 			name: "second importer succeeds",
-			importers: []Importer{
-				&MockImporter{shouldFail: true, err: fmt.Errorf("first failed")},
-				&MockImporter{tracklist: testTracklist},
-				&MockImporter{shouldFail: true, err: fmt.Errorf("should not be called")},
+			scrapers: []Scraper{
+				&MockScraper{shouldFail: true, err: fmt.Errorf("first failed")},
+				&MockScraper{tracklist: testTracklist},
+				&MockScraper{shouldFail: true, err: fmt.Errorf("should not be called")},
 			},
 			expectedResult: testTracklist,
 			expectError:    false,
 		},
 		{
 			name: "third importer succeeds",
-			importers: []Importer{
-				&MockImporter{shouldFail: true, err: fmt.Errorf("first failed")},
-				&MockImporter{shouldFail: true, err: fmt.Errorf("second failed")},
-				&MockImporter{tracklist: testTracklist},
+			scrapers: []Scraper{
+				&MockScraper{shouldFail: true, err: fmt.Errorf("first failed")},
+				&MockScraper{shouldFail: true, err: fmt.Errorf("second failed")},
+				&MockScraper{tracklist: testTracklist},
 			},
 			expectedResult: testTracklist,
 			expectError:    false,
 		},
 		{
 			name: "all importers fail",
-			importers: []Importer{
-				&MockImporter{shouldFail: true, err: fmt.Errorf("first failed")},
-				&MockImporter{shouldFail: true, err: fmt.Errorf("second failed")},
-				&MockImporter{shouldFail: true, err: fmt.Errorf("third failed")},
+			scrapers: []Scraper{
+				&MockScraper{shouldFail: true, err: fmt.Errorf("first failed")},
+				&MockScraper{shouldFail: true, err: fmt.Errorf("second failed")},
+				&MockScraper{shouldFail: true, err: fmt.Errorf("third failed")},
 			},
 			expectedResult: nil,
 			expectError:    true,
@@ -168,11 +167,11 @@ func TestCompositeImporterFallback(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			composite := &CompositeImporter{
-				importers: tt.importers,
+			composite := &CompositeScraper{
+				scrapers: tt.scrapers,
 			}
 
-			result, err := composite.Import(context.Background(), "test-source")
+			result, err := composite.Scrape(context.Background(), "test-source")
 
 			if tt.expectError {
 				assert.Error(t, err)

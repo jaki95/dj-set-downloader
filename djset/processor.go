@@ -29,19 +29,21 @@ var (
 )
 
 type processor struct {
-	tracklistImporter tracklist.Importer
-	setDownloader     downloader.Downloader
-	audioProcessor    audio.Processor
-	progressTracker   *progress.ProgressTracker
+	tracklistScraper tracklist.Scraper
+	setDownloader    downloader.Downloader
+	audioProcessor   audio.Processor
+	progressTracker  *progress.ProgressTracker
+	warningThreshold time.Duration
 }
 
 // New creates a new processor instance
-func New(tracklistImporter tracklist.Importer, setDownloader downloader.Downloader, audioProcessor audio.Processor) *processor {
+func New(tracklistScraper tracklist.Scraper, setDownloader downloader.Downloader, audioProcessor audio.Processor) *processor {
 	return &processor{
-		tracklistImporter: tracklistImporter,
-		setDownloader:     setDownloader,
-		audioProcessor:    audioProcessor,
-		progressTracker:   progress.NewProgressTracker(),
+		tracklistScraper: tracklistScraper,
+		setDownloader:    setDownloader,
+		audioProcessor:   audioProcessor,
+		progressTracker:  progress.NewProgressTracker(),
+		warningThreshold: 2 * time.Minute,
 	}
 }
 
@@ -233,7 +235,7 @@ func isDirEmpty(dir string) (bool, error) {
 }
 
 func (p *processor) importTracklist(ctx *processingContext) error {
-	set, err := p.tracklistImporter.Import(context.Background(), ctx.opts.Query)
+	set, err := p.tracklistScraper.Scrape(context.Background(), ctx.opts.Query)
 	if err != nil {
 		return err
 	}
@@ -593,20 +595,21 @@ func (p *processor) monitorTrackProcessing(
 	trackNumber int,
 	trackTitle string,
 ) {
-	warningThreshold := 2 * time.Minute
-	ticker := time.NewTicker(warningThreshold)
+	ticker := time.NewTicker(p.warningThreshold)
 	defer ticker.Stop()
 
-	select {
-	case <-done:
-		return
-	case <-ticker.C:
-		elapsed := time.Since(startTime)
-		slog.Warn("Track processing is taking longer than expected",
-			"track", trackNumber,
-			"title", trackTitle,
-			"elapsed", elapsed.String(),
-		)
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			elapsed := time.Since(startTime)
+			slog.Warn("track processing taking longer than expected",
+				"track_number", trackNumber,
+				"track_title", trackTitle,
+				"elapsed_time", elapsed,
+			)
+		}
 	}
 }
 

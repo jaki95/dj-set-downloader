@@ -5,35 +5,27 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jaki95/dj-set-downloader/internal/search"
+	"github.com/jaki95/dj-set-downloader/config"
 )
 
 func Test1001TracklistsScraping(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode") // Skip this test when -short flag is provided
 	}
-	// Create a mock search client that returns our test URL
-	mockSearchClient := &search.MockGoogleClient{
-		SearchFunc: func(ctx context.Context, query string, site string) ([]search.SearchResult, error) {
-			return []search.SearchResult{
-				{
-					Link: "https://www.1001tracklists.com/tracklist/2tlrkszk/mathame-afterlife-voyage-012-2018-09-17.html",
-				},
-			}, nil
-		},
-	}
 
-	importer, err := New1001TracklistsImporter(mockSearchClient)
+	cfg := &config.Config{}
+
+	scraper, err := New1001TracklistsScraper(cfg)
 	if err != nil {
-		t.Fatalf("Failed to create importer: %v", err)
+		t.Fatalf("Failed to create scraper: %v", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	tracklist, err := importer.Import(ctx, "Mathame Afterlife Voyage 012")
+	tracklist, err := scraper.Scrape(ctx, "https://www.1001tracklists.com/tracklist/2tlrkszk/mathame-afterlife-voyage-012-2018-09-17.html")
 	if err != nil {
-		t.Fatalf("Failed to import tracklist: %v", err)
+		t.Fatalf("Failed to scrape tracklist: %v", err)
 	}
 
 	// Basic validation
