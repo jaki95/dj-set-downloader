@@ -9,7 +9,7 @@ This application downloads DJ sets from SoundCloud and splits them into individu
 
 ## Usage
 
-`go run cmd/main.go -tracklist-url https://www.1001tracklists.com/tracklist/nn39729/mind-against-afterlife-voyage-006-2017-10-18.html`
+`go run cmd/main.go -query https://www.1001tracklists.com/tracklist/nn39729/mind-against-afterlife-voyage-006-2017-10-18.html`
 
 Original DJ Set on SoundCloud:
 
