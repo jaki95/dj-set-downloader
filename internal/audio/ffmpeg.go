@@ -66,6 +66,40 @@ func (f *ffmpeg) ExtractCoverArt(ctx context.Context, inputPath, coverPath strin
 	return nil
 }
 
+// sanitizePath ensures the path is within the allowed directory and returns an absolute path
+func (f *ffmpeg) sanitizePath(path string) (string, error) {
+	// Convert to absolute path
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	// Get current working directory as the base directory
+	baseDir, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	// Ensure the path is within the base directory
+	if !strings.HasPrefix(absPath, baseDir) {
+		return "", fmt.Errorf("path must be within the working directory")
+	}
+
+	return absPath, nil
+}
+
+// createTempFile creates a temporary file in the system's temp directory
+func (f *ffmpeg) createTempFile(prefix, extension string) (string, error) {
+	// Create temp file in system temp directory
+	tempFile, err := os.CreateTemp("", prefix+"_*."+extension)
+	if err != nil {
+		return "", fmt.Errorf("failed to create temporary file: %w", err)
+	}
+	tempPath := tempFile.Name()
+	tempFile.Close() // Close the file as we only need the path
+	return tempPath, nil
+}
+
 func (f *ffmpeg) Split(ctx context.Context, opts SplitParams) error {
 	// Validate input file before processing
 	if err := f.validateFile(opts.InputPath); err != nil {
@@ -77,6 +111,12 @@ func (f *ffmpeg) Split(ctx context.Context, opts SplitParams) error {
 		if err := f.validateFile(opts.CoverArtPath); err != nil {
 			return fmt.Errorf("track splitting failed on cover art validation: %w", err)
 		}
+	}
+
+	// Sanitize output path
+	sanitizedOutputPath, err := f.sanitizePath(opts.OutputPath)
+	if err != nil {
+		return fmt.Errorf("invalid output path: %w", err)
 	}
 
 	// Calculate start time and duration
@@ -94,9 +134,11 @@ func (f *ffmpeg) Split(ctx context.Context, opts SplitParams) error {
 		duration = endSeconds - startSeconds
 	}
 
-	// Define temporary file path for the audio segment
-	tempAudio := fmt.Sprintf("%s_temp.%s", opts.OutputPath, opts.FileExtension)
-
+	// Create temporary file in system temp directory
+	tempAudio, err := f.createTempFile("audio_segment", opts.FileExtension)
+	if err != nil {
+		return fmt.Errorf("failed to create temporary file: %w", err)
+	}
 	defer os.Remove(tempAudio)
 
 	// First pass: Extract audio segment
@@ -112,7 +154,7 @@ func (f *ffmpeg) Split(ctx context.Context, opts SplitParams) error {
 	}
 
 	// Second pass: Attach metadata and cover art
-	finalPath := fmt.Sprintf("%s.%s", opts.OutputPath, opts.FileExtension)
+	finalPath := fmt.Sprintf("%s.%s", sanitizedOutputPath, opts.FileExtension)
 
 	return f.addMetadataAndCover(ctx, tempAudio, finalPath, opts)
 }
@@ -125,14 +167,20 @@ func (f *ffmpeg) extractAudio(ctx context.Context, inputPath string, startSecond
 		"duration", fmt.Sprintf("%.3f", duration),
 	)
 
+	// Sanitize output path
+	sanitizedOutputPath, err := f.sanitizePath(outputPath)
+	if err != nil {
+		return fmt.Errorf("invalid output path: %w", err)
+	}
+
 	// Make sure the output directory exists
-	outputDir := filepath.Dir(outputPath)
+	outputDir := filepath.Dir(sanitizedOutputPath)
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
 	// Get the file extension from the output path
-	ext := filepath.Ext(outputPath)
+	ext := filepath.Ext(sanitizedOutputPath)
 	if ext != "" {
 		ext = ext[1:] // Remove the leading dot
 	}
@@ -173,7 +221,7 @@ func (f *ffmpeg) extractAudio(ctx context.Context, inputPath string, startSecond
 		"-af", "aresample=async=1",
 		"-movflags", "+faststart",
 		"-id3v2_version", "3",
-		outputPath,
+		sanitizedOutputPath,
 	)
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
