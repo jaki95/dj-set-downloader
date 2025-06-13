@@ -90,6 +90,12 @@ func (f *ffmpeg) sanitizePath(path string) (string, error) {
 
 // createTempFile creates a temporary file in the system's temp directory
 func (f *ffmpeg) createTempFile(prefix, extension string) (string, error) {
+	// Validate the file extension
+	allowedExtensions := map[string]bool{"mp3": true, "wav": true, "flac": true}
+	if !allowedExtensions[extension] {
+		return "", fmt.Errorf("invalid file extension: %s", extension)
+	}
+
 	// Create temp file in system temp directory
 	tempFile, err := os.CreateTemp("", prefix+"_*."+extension)
 	if err != nil {
