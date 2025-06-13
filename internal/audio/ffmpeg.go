@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -94,6 +95,17 @@ func (f *ffmpeg) createTempFile(prefix, extension string) (string, error) {
 	allowedExtensions := map[string]bool{"mp3": true, "wav": true, "flac": true}
 	if !allowedExtensions[extension] {
 		return "", fmt.Errorf("invalid file extension: %s", extension)
+	}
+
+	// Validate prefix to ensure it only contains safe characters
+	if prefix == "" {
+		return "", fmt.Errorf("prefix cannot be empty")
+	}
+
+	// Only allow alphanumeric characters, hyphens, and underscores in prefix
+	validPrefix := regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+	if !validPrefix.MatchString(prefix) {
+		return "", fmt.Errorf("prefix contains invalid characters")
 	}
 
 	// Create temp file in system temp directory
