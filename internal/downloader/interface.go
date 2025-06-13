@@ -1,6 +1,9 @@
 package downloader
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // Downloader represents a generic audio downloader interface
 type Downloader interface {
@@ -10,4 +13,15 @@ type Downloader interface {
 
 	// SupportsURL checks if this downloader can handle the given URL
 	SupportsURL(url string) bool
+}
+
+// GetDownloader returns the appropriate downloader for the given URL
+func GetDownloader(url string) (Downloader, error) {
+	// Check SoundCloud first
+	soundcloudDownloader := NewSoundCloudDownloader()
+	if soundcloudDownloader.SupportsURL(url) {
+		return soundcloudDownloader, nil
+	}
+
+	return nil, fmt.Errorf("no downloader available for URL: %s", url)
 }
