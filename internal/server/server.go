@@ -243,6 +243,12 @@ func (s *Server) processDirectly(ctx context.Context, tracklist *domain.Tracklis
 	}
 
 	// Create output directory
+	// Validate tracklist fields
+	if strings.Contains(tracklist.Artist, "/") || strings.Contains(tracklist.Artist, "\\") || strings.Contains(tracklist.Artist, "..") ||
+		strings.Contains(tracklist.Name, "/") || strings.Contains(tracklist.Name, "\\") || strings.Contains(tracklist.Name, "..") {
+		return nil, fmt.Errorf("invalid tracklist fields: artist or name contains unsafe characters")
+	}
+
 	outputDir := filepath.Join(s.cfg.Storage.OutputDir, fmt.Sprintf("%s - %s", tracklist.Artist, tracklist.Name))
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create output directory: %w", err)
