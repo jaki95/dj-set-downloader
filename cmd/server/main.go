@@ -10,26 +10,29 @@ import (
 )
 
 func main() {
-	port := flag.String("port", "8080", "Port to run the HTTP server on")
+	port := flag.String("port", "8080", "Server port")
 	flag.Parse()
 
+	// Load configuration
 	cfg, err := config.Load("./config/config.yaml")
 	if err != nil {
-		slog.Error("Failed to load config", "error", err)
+		slog.Error("Failed to load configuration", "error", err)
 		os.Exit(1)
 	}
 
+	// Setup logging
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.Level(cfg.LogLevel)}))
 	slog.SetDefault(logger)
 
-	server, err := server.New(cfg)
+	// Create and start server
+	srv, err := server.New(cfg)
 	if err != nil {
 		slog.Error("Failed to create server", "error", err)
 		os.Exit(1)
 	}
 
-	slog.Info("Starting DJ Set Processor HTTP server", "port", *port)
-	if err := server.Start(*port); err != nil {
+	slog.Info("Starting DJ Set Processor API server", "port", *port)
+	if err := srv.Start(*port); err != nil {
 		slog.Error("Server failed", "error", err)
 		os.Exit(1)
 	}

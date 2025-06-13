@@ -196,7 +196,7 @@ func (f *ffmpeg) addMetadataAndCover(ctx context.Context, inputPath, outputPath 
 	slog.Debug("Adding metadata and cover art",
 		"input", inputPath,
 		"output", outputPath,
-		"track", opts.Track.Title,
+		"track", opts.Track.Name,
 	)
 
 	// Get the file extension from the output path
@@ -236,7 +236,7 @@ func (f *ffmpeg) addMetadataAndCover(ctx context.Context, inputPath, outputPath 
 	metadata := map[string]string{
 		"album_artist": opts.Artist,
 		"artist":       opts.Track.Artist,
-		"title":        opts.Track.Title,
+		"title":        opts.Track.Name,
 		"track":        fmt.Sprintf("%d/%d", opts.Track.TrackNumber, opts.TrackCount),
 		"album":        opts.Name,
 		"compilation":  "1",
@@ -267,7 +267,7 @@ func (f *ffmpeg) addMetadataAndCover(ctx context.Context, inputPath, outputPath 
 			cmdStr = cmdStr[:200] + "..." // Truncate very long commands
 		}
 		return fmt.Errorf("ffmpeg metadata error: %s\nCommand: %s\nTrack: %s\nError: %w",
-			string(output), cmdStr, opts.Track.Title, err)
+			string(output), cmdStr, opts.Track.Name, err)
 	}
 
 	return nil

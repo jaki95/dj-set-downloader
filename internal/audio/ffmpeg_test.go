@@ -162,7 +162,7 @@ func TestSplit(t *testing.T) {
 		OutputPath:    outputPath,
 		FileExtension: "mp3",
 		Track: domain.Track{
-			Title:       "Test Track",
+			Name:        "Test Track",
 			Artist:      "Test Artist",
 			TrackNumber: 1,
 			StartTime:   "00:00:00",

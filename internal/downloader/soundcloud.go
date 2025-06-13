@@ -4,175 +4,192 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"os/exec"
-	"regexp"
-	"strconv"
+	"path/filepath"
 	"strings"
-
-	"github.com/jaki95/dj-set-downloader/internal/search"
-	"github.com/k0kubun/go-ansi"
-	"github.com/schollz/progressbar/v3"
+	"time"
 )
 
-type soundCloudClient struct {
-	googleClient search.GoogleClient
+// SoundCloudDownloader handles downloading from SoundCloud using scdl
+type SoundCloudDownloader struct {
+	clientID string
 }
 
-func NewSoundCloudDownloader() (*soundCloudClient, error) {
-	googleClient, err := search.NewGoogleClient()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Google client: %w", err)
+// NewSoundCloudDownloader creates a new SoundCloud downloader
+func NewSoundCloudDownloader() *SoundCloudDownloader {
+	return &SoundCloudDownloader{
+		clientID: os.Getenv("SOUNDCLOUD_CLIENT_ID"),
 	}
-
-	return &soundCloudClient{
-		googleClient: googleClient,
-	}, nil
 }
 
-func (s *soundCloudClient) FindURL(ctx context.Context, query string) (string, error) {
-	if query == "" {
-		return "", fmt.Errorf("invalid query")
-	}
-	slog.Debug("searching soundcloud for set", "query", query)
-
-	// Create a more specific search query for SoundCloud
-	soundcloudQuery := fmt.Sprintf("site:soundcloud.com %s", query)
-
-	// Search using Google with site-specific search engine
-	results, err := s.googleClient.Search(ctx, soundcloudQuery, "soundcloud")
-	if err != nil {
-		return "", fmt.Errorf("failed to search for track: %w", err)
-	}
-
-	if len(results) == 0 {
-		return "", fmt.Errorf("no results found for query: %s", query)
-	}
-
-	// Find the first valid SoundCloud URL
-	for _, result := range results {
-		if strings.Contains(result.Link, "soundcloud.com") {
-			slog.Debug("Found SoundCloud URL", "url", result.Link)
-			return result.Link, nil
-		}
-	}
-
-	return "", fmt.Errorf("no SoundCloud results found for query: %s", query)
+// SupportsURL checks if the URL is from SoundCloud
+func (d *SoundCloudDownloader) SupportsURL(url string) bool {
+	return strings.Contains(url, "soundcloud.com")
 }
 
-func (s *soundCloudClient) Download(ctx context.Context, trackURL, name string, downloadPath string, progressCallback func(int, string)) error {
-	slog.Debug("downloading set")
-	cmd := exec.CommandContext(ctx, "scdl", "-l", trackURL, "--name-format", name, "--path", downloadPath)
-	cmd.Env = append(os.Environ(), "PYTHONUNBUFFERED=1")
+// Download downloads audio from SoundCloud using scdl
+func (d *SoundCloudDownloader) Download(ctx context.Context, url, outputDir string) (string, error) {
+	slog.Info("Downloading from SoundCloud", "url", url, "outputDir", outputDir)
 
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("failed to get stderr pipe: %w", err)
+	// Check if scdl is available
+	if err := d.checkScdlAvailable(); err != nil {
+		return "", fmt.Errorf("scdl not available: %w", err)
 	}
 
-	bar := progressbar.NewOptions(
-		100,
-		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
-		progressbar.OptionEnableColorCodes(true),
-		progressbar.OptionSetTheme(progressbar.ThemeASCII),
-		progressbar.OptionFullWidth(),
-		progressbar.OptionShowCount(),
-		progressbar.OptionSetDescription("[cyan][1/2][reset] Downloading set..."),
-	)
+	// Create output directory if it doesn't exist
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create output directory: %w", err)
+	}
 
+	// Build scdl command with supported options
+	args := []string{
+		"-l", url,
+		"--path", outputDir,
+		"--onlymp3",
+		"--addtofile",
+		"--no-playlist-folder",
+		"--flac",          // Prefer FLAC if available
+		"--original-art",  // Download original artwork
+		"--original-name", // Use original filename
+		"--overwrite",     // Overwrite existing files
+	}
+
+	// Add client ID if available
+	if d.clientID != "" {
+		args = append(args, "--client-id", d.clientID)
+	}
+
+	// Execute scdl command with timeout
+	cmd := exec.CommandContext(ctx, "scdl", args...)
+	cmd.Dir = outputDir
+
+	slog.Debug("Executing scdl command", "args", args)
+
+	// Create buffers to capture output
+	var stdoutBuf, stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+
+	// Start the command
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("command start error: %w", err)
+		return "", fmt.Errorf("failed to start scdl: %w", err)
 	}
 
-	errChan := make(chan error, 1)
+	// Wait for completion with timeout
+	done := make(chan error, 1)
 	go func() {
-		errChan <- readOutputAndReportProgress(ctx, stderr, bar, progressCallback)
+		done <- cmd.Wait()
 	}()
 
 	select {
-	case <-ctx.Done():
-		// Context was cancelled, kill the process
-		if err := cmd.Cancel(); err != nil {
-			slog.Error("failed to kill process", "error", err)
-		}
-		return ctx.Err()
-	case err := <-errChan:
+	case err := <-done:
 		if err != nil {
-			return err
+			// Log the full output for debugging
+			slog.Error("scdl command failed",
+				"error", err,
+				"stdout", stdoutBuf.String(),
+				"stderr", stderrBuf.String(),
+			)
+			return "", fmt.Errorf("scdl download failed: %w\nstdout: %s\nstderr: %s",
+				err, stdoutBuf.String(), stderrBuf.String())
 		}
+	case <-ctx.Done():
+		if err := cmd.Process.Kill(); err != nil {
+			slog.Error("Failed to kill process after context cancellation", "error", err)
+		}
+		return "", ctx.Err()
+	case <-time.After(30 * time.Minute): // 30-minute timeout
+		if err := cmd.Process.Kill(); err != nil {
+			slog.Error("Failed to kill process after timeout", "error", err)
+		}
+		return "", fmt.Errorf("download timed out after 30 minutes")
 	}
 
-	if err := cmd.Wait(); err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		return fmt.Errorf("command wait error: %w", err)
+	// Find and validate the downloaded file
+	downloadedFile, err := d.findDownloadedFile(outputDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to find downloaded file: %w", err)
 	}
 
+	// Validate the downloaded file
+	if err := d.validateAudioFile(downloadedFile); err != nil {
+		return "", fmt.Errorf("downloaded file validation failed: %w", err)
+	}
+
+	slog.Info("Successfully downloaded from SoundCloud", "file", downloadedFile)
+	return downloadedFile, nil
+}
+
+// checkScdlAvailable verifies that scdl is installed and available
+func (d *SoundCloudDownloader) checkScdlAvailable() error {
+	cmd := exec.Command("scdl", "--version")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("scdl command not found. Please install scdl: pip install scdl")
+	}
 	return nil
 }
 
-func readOutputAndReportProgress(ctx context.Context, stderr io.ReadCloser, bar *progressbar.ProgressBar, progressCallback func(int, string)) error {
-	re := regexp.MustCompile(`(\d+)%`)
-	progressRe := regexp.MustCompile(`\d+%`)
+// findDownloadedFile finds the most recently downloaded audio file in the directory
+func (d *SoundCloudDownloader) findDownloadedFile(outputDir string) (string, error) {
+	// Look for common audio file extensions
+	audioExtensions := []string{".mp3", ".m4a", ".wav", ".flac"}
 
-	var lineBuffer bytes.Buffer
-	var lastProgress int
+	var mostRecentFile string
+	var mostRecentTime time.Time
 
-	// Create a channel to signal when reading is done
-	done := make(chan struct{})
-	var readErr error
+	err := filepath.Walk(outputDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
 
-	go func() {
-		defer close(done)
-		output := make([]byte, 1)
-		for {
-			_, err := stderr.Read(output)
-			if err != nil {
-				if err == io.EOF {
-					break
+		if info.IsDir() {
+			return nil
+		}
+
+		ext := strings.ToLower(filepath.Ext(path))
+		for _, audioExt := range audioExtensions {
+			if ext == audioExt {
+				if info.ModTime().After(mostRecentTime) {
+					mostRecentTime = info.ModTime()
+					mostRecentFile = path
 				}
-				readErr = fmt.Errorf("read error: %w", err)
-				return
-			}
-
-			char := output[0]
-			if char == '\r' || char == '\n' {
-				line := lineBuffer.String()
-				lineBuffer.Reset()
-
-				if !progressRe.MatchString(line) {
-					slog.Debug(line)
-				}
-
-				if matches := re.FindStringSubmatch(line); len(matches) > 1 {
-					progress, _ := strconv.Atoi(matches[1])
-					if progress > lastProgress {
-						_ = bar.Set(progress) // Update terminal progress bar
-						progressCallback(progress, "Downloading set...")
-						lastProgress = progress
-					}
-				}
-			} else {
-				lineBuffer.WriteByte(char)
+				break
 			}
 		}
-	}()
 
-	// Wait for either context cancellation or reading completion
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-done:
-		if readErr != nil {
-			return readErr
-		}
-		if lastProgress < 100 {
-			_ = bar.Set(100)
-			progressCallback(100, "Download completed")
-		}
 		return nil
+	})
+
+	if err != nil {
+		return "", fmt.Errorf("error scanning output directory: %w", err)
 	}
+
+	if mostRecentFile == "" {
+		return "", fmt.Errorf("no audio files found in output directory")
+	}
+
+	return mostRecentFile, nil
+}
+
+// validateAudioFile checks if the downloaded file is a valid audio file
+func (d *SoundCloudDownloader) validateAudioFile(filepath string) error {
+	// Check if file exists and has size
+	info, err := os.Stat(filepath)
+	if err != nil {
+		return fmt.Errorf("failed to stat file: %w", err)
+	}
+
+	if info.Size() == 0 {
+		return fmt.Errorf("downloaded file is empty")
+	}
+
+	// Check if file is at least 1MB (to avoid partial downloads)
+	if info.Size() < 1024*1024 {
+		return fmt.Errorf("downloaded file is too small (less than 1MB)")
+	}
+
+	// TODO: Add more validation like checking file headers, etc.
+	return nil
 }
