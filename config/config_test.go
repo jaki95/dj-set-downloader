@@ -9,64 +9,69 @@ import (
 )
 
 func TestLoad(t *testing.T) {
-	// Create a temporary directory for test files
-	tempDir := t.TempDir()
-
-	// Create a test config file
-	configPath := filepath.Join(tempDir, "test_config.yaml")
-	configContent := `
+	t.Run("should load a valid config file", func(t *testing.T) {
+		tempDir := t.TempDir()
+		configPath := filepath.Join(tempDir, "test_config.yaml")
+		configContent := `
 log_level: -4
 audio_processor: ffmpeg
-audio_source: soundcloud
-tracklist_source: trackids
-file_extension: mp3
+file_extension: m4a
+storage:
+  type: "local"
+  output_dir: "test_output"
 `
-	err := os.WriteFile(configPath, []byte(configContent), 0644)
-	assert.NoError(t, err)
+		err := os.WriteFile(configPath, []byte(configContent), 0644)
+		assert.NoError(t, err)
 
-	// Test loading the config
-	cfg, err := Load(configPath)
+		cfg, err := Load(configPath)
 
-	// Assert
-	assert.NoError(t, err)
-	assert.NotNil(t, cfg)
-	assert.Equal(t, -4, cfg.LogLevel)
-	assert.Equal(t, "ffmpeg", cfg.AudioProcessor)
-	assert.Equal(t, "soundcloud", cfg.AudioSource)
-	assert.Equal(t, "trackids", cfg.TracklistSource)
-	assert.Equal(t, "mp3", cfg.FileExtension)
-}
+		assert.NoError(t, err)
+		assert.NotNil(t, cfg)
+		assert.Equal(t, -4, cfg.LogLevel)
+		assert.Equal(t, "ffmpeg", cfg.AudioProcessor)
+		assert.Equal(t, "m4a", cfg.FileExtension)
+		assert.Equal(t, "local", cfg.Storage.Type)
+		assert.Equal(t, "test_output", cfg.Storage.OutputDir)
+	})
 
-func TestLoadNonExistentFile(t *testing.T) {
-	// Test loading a non-existent config file
-	cfg, err := Load("non_existent_file.yaml")
+	t.Run("should return an error for a non-existent file", func(t *testing.T) {
+		cfg, err := Load("non_existent_file.yaml")
 
-	// Assert
-	assert.Error(t, err)
-	assert.Nil(t, cfg)
-}
+		assert.Error(t, err)
+		assert.Nil(t, cfg)
+	})
 
-func TestLoadInvalidYAML(t *testing.T) {
-	// Create a temporary directory for test files
-	tempDir := t.TempDir()
-
-	// Create an invalid YAML file
-	configPath := filepath.Join(tempDir, "invalid_config.yaml")
-	configContent := `
+	t.Run("should return an error for invalid YAML", func(t *testing.T) {
+		tempDir := t.TempDir()
+		configPath := filepath.Join(tempDir, "invalid_config.yaml")
+		configContent := `
 log_level: -4
-audio_processor: ffmpeg
-audio_source: soundcloud
-tracklist_source: trackids
-file_extension: mp3
 invalid_yaml: [this is not valid yaml
 `
-	err := os.WriteFile(configPath, []byte(configContent), 0644)
-	assert.NoError(t, err)
+		err := os.WriteFile(configPath, []byte(configContent), 0644)
+		assert.NoError(t, err)
 
-	// Test loading the invalid config
-	cfg, err := Load(configPath)
+		cfg, err := Load(configPath)
 
-	// Assert
-	assert.Error(t, err)
-	assert.Nil(t, cfg)
+		assert.Error(t, err)
+		assert.Nil(t, cfg)
+	})
+
+	t.Run("should set default values", func(t *testing.T) {
+		tempDir := t.TempDir()
+		configPath := filepath.Join(tempDir, "test_config.yaml")
+		configContent := `
+log_level: 0
+file_extension: mp3
+`
+		err := os.WriteFile(configPath, []byte(configContent), 0644)
+		assert.NoError(t, err)
+
+		cfg, err := Load(configPath)
+
+		assert.NoError(t, err)
+		assert.NotNil(t, cfg)
+		assert.Equal(t, "local", cfg.Storage.Type)
+		assert.Equal(t, "output", cfg.Storage.OutputDir)
+	})
 }
