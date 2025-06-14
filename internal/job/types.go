@@ -51,11 +51,11 @@ const (
 
 // Constants for progress percentages
 const (
-	ProgressDownloadStart   = 0   // Download starts at 10%
-	ProgressDownloadEnd     = 25  // Download ends at 50%
-	ProgressProcessingStart = 25  // Processing starts at 50%
-	ProgressProcessingEnd   = 99  // Processing ends at 90%
-	ProgressComplete        = 100 // Complete at 100%
+	ProgressDownloadStart   = 0
+	ProgressDownloadEnd     = 25
+	ProgressProcessingStart = 25
+	ProgressProcessingEnd   = 99
+	ProgressComplete        = 100
 )
 
 // Constants for pagination
