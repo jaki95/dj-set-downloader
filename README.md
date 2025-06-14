@@ -20,7 +20,7 @@ This application provides an API to download DJ sets and split them into individ
    **Example using `curl`:**
 
    ```bash
-   curl -X POST http://localhost:8080/api/v1/process \
+   curl -X POST http://localhost:8000/api/v1/process \
    -H "Content-Type: application/json" \
    -d '{
      "downloadUrl": "SOUNDCLOUD_URL_OF_THE_SET",
