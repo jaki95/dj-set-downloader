@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 )
 
@@ -166,20 +165,13 @@ func (f *ffmpeg) sanitizePath(path string) (string, error) {
 }
 
 // createTempFile creates a temporary file in the system's temp directory
-func (f *ffmpeg) createTempFile(prefix, extension string) (string, error) {
+func (f *ffmpeg) createTempFile(extension string) (string, error) {
 	// Check if extension is supported
 	if _, ok := supportedExtensions[extension]; !ok {
 		return "", fmt.Errorf("%w: %s", ErrInvalidExtension, extension)
 	}
 
-	if prefix == "" {
-		return "", fmt.Errorf("%w: prefix cannot be empty", ErrInvalidPrefix)
-	}
-
-	validPrefix := regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
-	if !validPrefix.MatchString(prefix) {
-		return "", fmt.Errorf("%w: contains invalid characters", ErrInvalidPrefix)
-	}
+	const prefix = "audio_segment"
 
 	tempFile, err := os.CreateTemp("", prefix+"_*."+extension)
 	if err != nil {
@@ -220,7 +212,7 @@ func (f *ffmpeg) Split(ctx context.Context, opts SplitParams) error {
 		duration = endSeconds - startSeconds
 	}
 
-	tempAudio, err := f.createTempFile("audio_segment", opts.FileExtension)
+	tempAudio, err := f.createTempFile(opts.FileExtension)
 	if err != nil {
 		return fmt.Errorf("failed to create temporary file: %w", err)
 	}
