@@ -3,6 +3,7 @@ package job
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/jaki95/dj-set-downloader/internal/domain"
@@ -11,6 +12,7 @@ import (
 // Manager handles job management
 type Manager struct {
 	jobs map[string]*Status
+	mu   sync.RWMutex
 }
 
 // NewManager creates a new job manager
@@ -35,12 +37,16 @@ func (m *Manager) CreateJob(tracklist domain.Tracklist) (*Status, context.Contex
 		cancelFunc: cancel,
 	}
 
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.jobs[jobID] = job
 	return job, ctx
 }
 
 // GetJob retrieves a job by ID
 func (m *Manager) GetJob(jobID string) (*Status, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	job, exists := m.jobs[jobID]
 	if !exists {
 		return nil, fmt.Errorf("%w: %s", ErrNotFound, jobID)
@@ -50,9 +56,12 @@ func (m *Manager) GetJob(jobID string) (*Status, error) {
 
 // CancelJob cancels a job
 func (m *Manager) CancelJob(jobID string) error {
-	job, err := m.GetJob(jobID)
-	if err != nil {
-		return err
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	job, exists := m.jobs[jobID]
+	if !exists {
+		return fmt.Errorf("%w: %s", ErrNotFound, jobID)
 	}
 
 	if job.Status != StatusProcessing && job.Status != StatusPending {
@@ -70,6 +79,9 @@ func (m *Manager) CancelJob(jobID string) error {
 
 // ListJobs lists all jobs with pagination
 func (m *Manager) ListJobs(page, pageSize int) *Response {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	if page < 1 {
 		page = 1
 	}

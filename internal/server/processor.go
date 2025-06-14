@@ -87,7 +87,7 @@ func (s *Server) splitTracks(ctx context.Context, inputFilePath string, tracklis
 		}
 
 		trackNumber := i + 1
-		trackName := fmt.Sprintf("%02d-%s", trackNumber, track.Name)
+		trackName := fmt.Sprintf("%02d-%s", trackNumber, sanitizeFilename(track.Name))
 		outputPath := filepath.Join(outputDir, trackName)
 
 		splitParams := audio.SplitParams{
@@ -182,4 +182,17 @@ func (s *Server) processUrlInBackground(ctx context.Context, jobID string, downl
 		jobStatus.Results = results
 		slog.Info("Job completed successfully", "jobId", jobID, "results", len(results))
 	}
+}
+
+func sanitizeFilename(name string) string {
+	// Replace unsafe characters with underscores
+	unsafe := []string{"/", "\\", "..", ":", "*", "?", "\"", "<", ">", "|"}
+	result := name
+	for _, char := range unsafe {
+		result = strings.ReplaceAll(result, char, "_")
+	}
+
+	// Also remove any leading/trailing spaces
+	result = strings.TrimSpace(result)
+	return result
 }

@@ -20,7 +20,13 @@ func main() {
 	}
 
 	// Override port from command line if provided
-	if *port != "" {
+	portSet := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "port" {
+			portSet = true
+		}
+	})
+	if portSet {
 		cfg.Server.Port = *port
 	}
 
