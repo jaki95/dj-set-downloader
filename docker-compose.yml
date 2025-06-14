@@ -1,0 +1,15 @@
+services:
+  dj-set-downloader:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dj-set-downloader
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config/config.yaml:/app/config/config.yaml:ro
+      - ./output:/app/output
+      - /tmp:/app/tmp
+    restart: unless-stopped
+    environment:
+      - GIN_MODE=release 

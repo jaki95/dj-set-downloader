@@ -51,9 +51,10 @@ const (
 
 // Constants for progress percentages
 const (
-	ProgressDownloadStart   = 10
-	ProgressProcessingStart = 20
-	ProgressProcessingEnd   = 90
+	ProgressDownloadStart   = 0
+	ProgressDownloadEnd     = 25
+	ProgressProcessingStart = 25
+	ProgressProcessingEnd   = 99
 	ProgressComplete        = 100
 )
 

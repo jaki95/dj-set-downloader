@@ -5,11 +5,16 @@ import (
 	"fmt"
 )
 
+// ProgressCallback is a function type for progress updates during download
+// Parameters: progressPercent (0-100), message, optional data
+type ProgressCallback func(int, string, []byte)
+
 // Downloader represents a generic audio downloader interface
 type Downloader interface {
 	// Download downloads audio from the given URL to the output directory
 	// Returns the path to the downloaded file
-	Download(ctx context.Context, url, outputDir string) (string, error)
+	// progressCallback can be nil if progress updates are not needed
+	Download(ctx context.Context, url, outputDir string, progressCallback ProgressCallback) (string, error)
 
 	// SupportsURL checks if this downloader can handle the given URL
 	SupportsURL(url string) bool

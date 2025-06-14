@@ -1,0 +1,34 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# Output directory (will be created in container)
+output/
+
+# Development files
+.DS_Store
+.cursor/
+.github/
+
+# Test files
+*_test.go
+
+# Scripts (not needed in production)
+scripts/
+run
+
+# Local development files
+.env
+.env.local
+
+# IDE files
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.log 

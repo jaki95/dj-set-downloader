@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -53,8 +55,8 @@ func (d *SoundCloudDownloader) SupportsURL(url string) bool {
 	return strings.Contains(url, "soundcloud.com")
 }
 
-// Download downloads audio from SoundCloud using scdl
-func (d *SoundCloudDownloader) Download(ctx context.Context, url, outputDir string) (string, error) {
+// Download downloads audio from SoundCloud using scdl with progress reporting
+func (d *SoundCloudDownloader) Download(ctx context.Context, url, outputDir string, progressCallback ProgressCallback) (string, error) {
 	slog.Info("Downloading from SoundCloud", "url", url, "outputDir", outputDir)
 
 	if err := d.checkScdlAvailable(); err != nil {
@@ -113,9 +115,15 @@ func (d *SoundCloudDownloader) Download(ctx context.Context, url, outputDir stri
 		done <- err
 	}()
 
-	// Add periodic progress logging with output capture
-	ticker := time.NewTicker(10 * time.Second)
+	// Add periodic progress reporting and output capture
+	ticker := time.NewTicker(2 * time.Second) // Check more frequently for better progress updates
 	defer ticker.Stop()
+
+	// Track progress from output parsing
+	progressPercent := 10 // Start at 10% (download initiated)
+	if progressCallback != nil {
+		progressCallback(progressPercent, "Download initiated...", nil)
+	}
 
 	for {
 		select {
@@ -130,6 +138,9 @@ func (d *SoundCloudDownloader) Download(ctx context.Context, url, outputDir stri
 					err, stdoutBuf.String(), stderrBuf.String())
 			}
 			slog.Info("scdl download completed successfully")
+			if progressCallback != nil {
+				progressCallback(100, "Download completed", nil)
+			}
 			goto downloadComplete
 		case <-ctx.Done():
 			slog.Warn("Context cancelled, killing scdl process", "pid", cmd.Process.Pid)
@@ -144,11 +155,33 @@ func (d *SoundCloudDownloader) Download(ctx context.Context, url, outputDir stri
 			}
 			return "", fmt.Errorf("%w: %v", ErrDownloadTimeout, d.timeout)
 		case <-ticker.C:
-			// Show current output buffers to see what scdl is doing
+			// Parse output for progress information
 			stdout := stdoutBuf.String()
 			stderr := stderrBuf.String()
+
+			// Try to extract progress from scdl output
+			newProgress := d.parseProgressFromOutput(stdout + stderr)
+			if newProgress > 0 {
+				// Use parsed progress if found
+				if newProgress > progressPercent {
+					progressPercent = newProgress
+				}
+				if progressCallback != nil {
+					progressCallback(progressPercent, fmt.Sprintf("Downloading... %d%%", progressPercent), nil)
+				}
+			} else {
+				// Only use fallback when no progress is found at all
+				if progressPercent < 90 { // Don't go above 90% until completion
+					progressPercent += 5
+				}
+				if progressCallback != nil {
+					progressCallback(progressPercent, "Download in progress...", nil)
+				}
+			}
+
 			slog.Info("scdl download still in progress...",
 				"pid", cmd.Process.Pid,
+				"progress", progressPercent,
 				"stdout_length", len(stdout),
 				"stderr_length", len(stderr),
 				"latest_stdout", func() string {
@@ -178,6 +211,44 @@ downloadComplete:
 
 	slog.Info("Successfully downloaded from SoundCloud", "file", downloadedFile)
 	return downloadedFile, nil
+}
+
+// parseProgressFromOutput attempts to extract progress percentage from scdl output
+func (d *SoundCloudDownloader) parseProgressFromOutput(output string) int {
+	// Look for percentage patterns in the output
+	progressRegex := regexp.MustCompile(`(\d+)%`)
+	matches := progressRegex.FindAllStringSubmatch(output, -1)
+
+	if len(matches) > 0 {
+		// Get the last/highest percentage found
+		var maxPercent int
+		for _, match := range matches {
+			if len(match) > 1 {
+				if percent, err := strconv.Atoi(match[1]); err == nil {
+					if percent > maxPercent && percent <= 100 {
+						maxPercent = percent
+					}
+				}
+			}
+		}
+		if maxPercent > 0 {
+			return maxPercent
+		}
+	}
+
+	// Look for common download indicators in scdl output
+	output = strings.ToLower(output)
+	if strings.Contains(output, "downloading") && !strings.Contains(output, "error") {
+		return 30 // Indicate active downloading
+	}
+	if strings.Contains(output, "processing") {
+		return 70 // Indicate processing phase
+	}
+	if strings.Contains(output, "complete") || strings.Contains(output, "finished") {
+		return 95 // Almost done
+	}
+
+	return 0 // No progress info found
 }
 
 // checkScdlAvailable verifies that scdl is installed and available

@@ -28,7 +28,13 @@ func (s *Server) process(ctx context.Context, tracklist *domain.Tracklist, downl
 	defer os.RemoveAll(tempDir)
 	slog.Info("Created temp directory", "tempDir", tempDir)
 
-	progressCallback(job.ProgressDownloadStart, "Downloading audio file...", nil)
+	// Create a download progress callback that maps to the download range
+	downloadProgressCallback := func(percent int, message string, data []byte) {
+		// Map download progress (0-100%) to overall progress using constants
+		downloadRange := float64(job.ProgressDownloadEnd - job.ProgressDownloadStart)
+		mappedPercent := job.ProgressDownloadStart + int(float64(percent)*downloadRange/100.0)
+		progressCallback(mappedPercent, message, data)
+	}
 
 	slog.Info("Getting downloader for URL", "url", downloadURL)
 	dl, err := downloader.GetDownloader(downloadURL)
@@ -38,7 +44,7 @@ func (s *Server) process(ctx context.Context, tracklist *domain.Tracklist, downl
 	}
 	slog.Info("Got downloader, starting download", "url", downloadURL)
 
-	downloadedFile, err := dl.Download(ctx, downloadURL, tempDir)
+	downloadedFile, err := dl.Download(ctx, downloadURL, tempDir, downloadProgressCallback)
 	if err != nil {
 		slog.Error("Download failed", "url", downloadURL, "error", err)
 		return nil, fmt.Errorf("failed to download audio: %w", err)
