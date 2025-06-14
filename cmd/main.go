@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	port := flag.String("port", "8080", "Port to run the HTTP server on")
+	port := flag.String("port", "8000", "Port to run the HTTP server on")
 	flag.Parse()
 
 	cfg, err := config.Load("./config/config.yaml")
@@ -19,17 +19,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Override port from command line if provided
+	if *port != "" {
+		cfg.Server.Port = *port
+	}
+
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.Level(cfg.LogLevel)}))
 	slog.SetDefault(logger)
 
-	server, err := server.New(cfg)
-	if err != nil {
-		slog.Error("Failed to create server", "error", err)
-		os.Exit(1)
-	}
+	server := server.New(cfg)
 
-	slog.Info("Starting DJ Set Processor HTTP server", "port", *port)
-	if err := server.Start(*port); err != nil {
+	slog.Info("Starting DJ Set Processor HTTP server", "port", cfg.Server.Port)
+	if err := server.Start(); err != nil {
 		slog.Error("Server failed", "error", err)
 		os.Exit(1)
 	}

@@ -93,6 +93,7 @@ func (f *ffmpeg) validateFile(path string) error {
 	return nil
 }
 
+// ExtractCoverArt extracts the cover art from the input file and saves it to the coverPath
 func (f *ffmpeg) ExtractCoverArt(ctx context.Context, inputPath, coverPath string) error {
 	slog.Debug("Extracting cover art", "input", inputPath, "output", coverPath)
 
@@ -125,23 +126,43 @@ func (f *ffmpeg) ExtractCoverArt(ctx context.Context, inputPath, coverPath strin
 	return nil
 }
 
-// sanitizePath ensures the path is within the allowed directory and returns an absolute path
+// sanitizePath ensures the path is safe and returns an absolute path
 func (f *ffmpeg) sanitizePath(path string) (string, error) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return "", fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
+	// Allow temporary files (system temp directory)
+	tempDir := os.TempDir()
+	if tempDir != "" {
+		absTempDir, err := filepath.Abs(tempDir)
+		if err == nil && strings.HasPrefix(absPath, absTempDir) {
+			return absPath, nil
+		}
+	}
+
+	// Allow paths within the working directory
 	baseDir, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("failed to get working directory: %w", err)
 	}
 
-	if !strings.HasPrefix(absPath, baseDir) {
-		return "", fmt.Errorf("%w: path must be within the working directory", ErrInvalidPath)
+	if strings.HasPrefix(absPath, baseDir) {
+		return absPath, nil
 	}
 
-	return absPath, nil
+	// Check for path traversal attempts
+	if strings.Contains(path, "..") {
+		return "", fmt.Errorf("%w: path contains '..' which is not allowed", ErrInvalidPath)
+	}
+
+	// For output directories, allow if they're absolute paths without traversal
+	if filepath.IsAbs(path) && !strings.Contains(path, "..") {
+		return absPath, nil
+	}
+
+	return "", fmt.Errorf("%w: path must be within the working directory or a safe absolute path", ErrInvalidPath)
 }
 
 // createTempFile creates a temporary file in the system's temp directory

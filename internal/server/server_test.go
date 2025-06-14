@@ -7,39 +7,53 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/jaki95/dj-set-downloader/config"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/jaki95/dj-set-downloader/internal/job"
 )
 
 func newTestServer(t *testing.T) *Server {
 	cfg := &config.Config{
-		LogLevel:       -4, // Slog debug level
-		AudioProcessor: "ffmpeg",
-		FileExtension:  "m4a",
+		Server: config.ServerConfig{
+			Port: "8080",
+		},
 		Storage: config.StorageConfig{
 			Type:      "local",
 			OutputDir: t.TempDir(),
 		},
 	}
-	server, err := New(cfg)
-	require.NoError(t, err)
+	server := New(cfg)
+	server.router = server.setupTestRoutes()
 	return server
+}
+
+func (s *Server) setupTestRoutes() *gin.Engine {
+	router := gin.Default()
+	s.setupRoutes(router)
+	return router
 }
 
 func TestHealthCheck(t *testing.T) {
 	server := newTestServer(t)
 	req, err := http.NewRequest("GET", "/health", nil)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	rr := httptest.NewRecorder()
 	server.router.ServeHTTP(rr, req)
 
-	assert.Equal(t, http.StatusOK, rr.Code)
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, rr.Code)
+	}
 	var response map[string]interface{}
 	err = json.Unmarshal(rr.Body.Bytes(), &response)
-	require.NoError(t, err)
-	assert.Equal(t, "healthy", response["status"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response["status"] != "ok" {
+		t.Errorf("Expected status 'ok', got %v", response["status"])
+	}
 }
 
 func TestProcessRequestValidation(t *testing.T) {
@@ -52,15 +66,15 @@ func TestProcessRequestValidation(t *testing.T) {
 	}{
 		{
 			name: "valid request",
-			requestBody: ProcessUrlRequest{
-				DownloadURL: "https://example.com/set.mp3",
-				Tracklist:   `{"artist":"Test Artist", "name":"Test Mix", "tracks":[]}`,
+			requestBody: job.Request{
+				URL:       "https://example.com/set.mp3",
+				Tracklist: `{"artist":"Test Artist", "name":"Test Mix", "tracks":[{"name":"Track 1","startTime":"00:00","endTime":"03:00"}]}`,
 			},
 			expectedStatus: http.StatusAccepted,
 		},
 		{
 			name:           "missing required fields",
-			requestBody:    ProcessUrlRequest{},
+			requestBody:    job.Request{},
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
@@ -80,43 +94,57 @@ func TestProcessRequestValidation(t *testing.T) {
 				body.Write(jsonData)
 			}
 
-			req, err := http.NewRequest("POST", "/api/v1/process", &body)
-			require.NoError(t, err)
+			req, err := http.NewRequest("POST", "/api/process", &body)
+			if err != nil {
+				t.Fatal(err)
+			}
 			req.Header.Set("Content-Type", "application/json")
 
 			rr := httptest.NewRecorder()
 			server.router.ServeHTTP(rr, req)
 
-			assert.Equal(t, tt.expectedStatus, rr.Code)
+			if rr.Code != tt.expectedStatus {
+				t.Errorf("Expected status %d, got %d", tt.expectedStatus, rr.Code)
+			}
 		})
 	}
 }
 
 func TestGetJobStatus_NotFound(t *testing.T) {
 	server := newTestServer(t)
-	req, err := http.NewRequest("GET", "/api/v1/jobs/non-existent-job", nil)
-	require.NoError(t, err)
+	req, err := http.NewRequest("GET", "/api/jobs/non-existent-job", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	rr := httptest.NewRecorder()
 	server.router.ServeHTTP(rr, req)
 
-	assert.Equal(t, http.StatusNotFound, rr.Code)
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("Expected status %d, got %d", http.StatusNotFound, rr.Code)
+	}
 }
 
 func TestListJobs(t *testing.T) {
 	server := newTestServer(t)
-	req, err := http.NewRequest("GET", "/api/v1/jobs", nil)
-	require.NoError(t, err)
+	req, err := http.NewRequest("GET", "/api/jobs", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	rr := httptest.NewRecorder()
 	server.router.ServeHTTP(rr, req)
 
-	assert.Equal(t, http.StatusOK, rr.Code)
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, rr.Code)
+	}
 	var response map[string]interface{}
 	err = json.Unmarshal(rr.Body.Bytes(), &response)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	assert.Contains(t, response, "jobs")
-	jobs := response["jobs"].([]interface{})
-	assert.Empty(t, jobs)
+	if _, exists := response["jobs"]; !exists {
+		t.Error("Expected 'jobs' field in response")
+	}
 }

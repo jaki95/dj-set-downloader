@@ -11,8 +11,12 @@ type Config struct {
 	AudioProcessor string `yaml:"audio_processor"`
 	FileExtension  string `yaml:"file_extension"`
 
-	// Storage configuration
+	Server  ServerConfig  `yaml:"server"`
 	Storage StorageConfig `yaml:"storage"`
+}
+
+type ServerConfig struct {
+	Port string `yaml:"port"`
 }
 
 type StorageConfig struct {
@@ -44,6 +48,10 @@ func Load(path string) (*Config, error) {
 	}
 
 	// Set defaults if not provided
+	if config.Server.Port == "" {
+		config.Server.Port = "8080"
+	}
+
 	if config.Storage.Type == "" {
 		config.Storage.Type = "local"
 	}

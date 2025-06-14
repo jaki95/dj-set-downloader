@@ -5,7 +5,7 @@ type Track struct {
 	Artist      string `json:"artist"`
 	StartTime   string `json:"start_time"`
 	EndTime     string `json:"end_time"`
-	TrackNumber int    `json:"track_number"` // This will be set during processing
+	TrackNumber int    `json:"track_number"`
 }
 
 type Tracklist struct {
