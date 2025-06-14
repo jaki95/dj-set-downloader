@@ -1,18 +1,13 @@
 # DJ Set Downloader
 
-This application provides an API to download DJ sets and split them into individual tracks based on a provided tracklist.
-
-## Dependencies
-
-* [ffmpeg](https://github.com/FFmpeg/FFmpeg)
-* [scdl](https://github.com/scdl-org/scdl)
+This application provides an API to download DJ sets and split them into individual tracks based on a provided Soundcloud url and tracklist.
 
 ## Usage
 
 1. **Start the server:**
 
    ```bash
-   go run cmd/main.go
+   docker compose up
    ```
 
 2. **Send a request to the API:**
