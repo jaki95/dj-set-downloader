@@ -161,18 +161,21 @@ func (d *SoundCloudDownloader) Download(ctx context.Context, url, outputDir stri
 
 			// Try to extract progress from scdl output
 			newProgress := d.parseProgressFromOutput(stdout + stderr)
-			if newProgress > progressPercent {
-				progressPercent = newProgress
+			if newProgress > 0 {
+				// Use parsed progress if found
+				if newProgress > progressPercent {
+					progressPercent = newProgress
+				}
 				if progressCallback != nil {
 					progressCallback(progressPercent, fmt.Sprintf("Downloading... %d%%", progressPercent), nil)
 				}
 			} else {
-				// If no specific progress found, gradually increment progress
+				// Only use fallback when no progress is found at all
 				if progressPercent < 90 { // Don't go above 90% until completion
 					progressPercent += 5
-					if progressCallback != nil {
-						progressCallback(progressPercent, "Download in progress...", nil)
-					}
+				}
+				if progressCallback != nil {
+					progressCallback(progressPercent, "Download in progress...", nil)
 				}
 			}
 
