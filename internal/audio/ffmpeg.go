@@ -1,3 +1,6 @@
+// Package audio provides functionality for processing audio files using FFmpeg.
+// It includes features for extracting cover art, splitting audio files into tracks,
+// and adding metadata to audio files.
 package audio
 
 import (
@@ -10,6 +13,59 @@ import (
 	"strings"
 )
 
+// Supported audio file extensions and their corresponding FFmpeg codecs and formats
+var (
+	supportedExtensions = map[string]struct {
+		codec  string
+		format string
+	}{
+		"mp3":  {"libmp3lame", "mp3"},
+		"m4a":  {"aac", "mp4"},
+		"wav":  {"pcm_s16le", "wav"},
+		"flac": {"flac", "flac"},
+	}
+
+	// Default audio settings
+	defaultAudioBitrate = "128k"
+	defaultID3Version   = "3"
+)
+
+var (
+	ErrFileNotFound     = fmt.Errorf("file not found")
+	ErrFileEmpty        = fmt.Errorf("file is empty")
+	ErrInvalidPath      = fmt.Errorf("invalid path")
+	ErrInvalidExtension = fmt.Errorf("invalid file extension")
+	ErrInvalidPrefix    = fmt.Errorf("invalid file prefix")
+)
+
+// ffmpegError wraps FFmpeg command errors with additional context
+type ffmpegError struct {
+	cmd     string
+	output  string
+	wrapped error
+}
+
+func (e *ffmpegError) Error() string {
+	return fmt.Sprintf("ffmpeg error: %s\nCommand: %s\nOutput: %s", e.wrapped, e.cmd, e.output)
+}
+
+func (e *ffmpegError) Unwrap() error {
+	return e.wrapped
+}
+
+// newFFmpegError creates a new ffmpegError with truncated command output
+func newFFmpegError(cmd *exec.Cmd, output []byte, err error) error {
+	cmdStr := cmd.String()
+	if len(cmdStr) > 200 {
+		cmdStr = cmdStr[:200] + "..."
+	}
+	return &ffmpegError{
+		cmd:     cmdStr,
+		output:  string(output),
+		wrapped: err,
+	}
+}
+
 type ffmpeg struct{}
 
 func NewFFMPEGEngine() *ffmpeg {
@@ -17,69 +73,130 @@ func NewFFMPEGEngine() *ffmpeg {
 }
 
 func (f *ffmpeg) validateFile(path string) error {
-	// Check if file exists and is readable
 	fileInfo, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("file does not exist: %s", path)
+			return fmt.Errorf("%w: %s", ErrFileNotFound, path)
 		}
 		return fmt.Errorf("unable to access file: %s: %w", path, err)
 	}
 
-	// Check if it's a file (not directory)
 	if fileInfo.IsDir() {
-		return fmt.Errorf("path is a directory, not a file: %s", path)
+		return fmt.Errorf("%w: %s is a directory", ErrInvalidPath, path)
 	}
 
-	// Check if file has content
 	if fileInfo.Size() == 0 {
-		return fmt.Errorf("file is empty (0 bytes): %s", path)
+		return fmt.Errorf("%w: %s", ErrFileEmpty, path)
 	}
 
 	return nil
 }
 
+// ExtractCoverArt extracts the cover art from the input file and saves it to the coverPath
 func (f *ffmpeg) ExtractCoverArt(ctx context.Context, inputPath, coverPath string) error {
 	slog.Debug("Extracting cover art", "input", inputPath, "output", coverPath)
 
-	// Validate input file before processing
 	if err := f.validateFile(inputPath); err != nil {
-		return fmt.Errorf("cover art extraction failed on input validation: %w", err)
+		return fmt.Errorf("cover art extraction failed: %w", err)
 	}
 
-	// Make sure the output directory exists
 	outputDir := filepath.Dir(coverPath)
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		return fmt.Errorf("failed to create output directory for cover art: %w", err)
+		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	cmd := exec.CommandContext(ctx, "ffmpeg", "-y", "-i", inputPath, "-map", "0:v:0", "-c:v", "mjpeg", "-vframes", "1", coverPath)
+	cmd := exec.CommandContext(ctx, "ffmpeg",
+		"-y",
+		"-i", inputPath,
+		"-map", "0:v:0",
+		"-c:v", "mjpeg",
+		"-vframes", "1",
+		coverPath,
+	)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		return fmt.Errorf("ffmpeg cover extraction error: %s: %w", string(output), err)
+		return newFFmpegError(cmd, output, err)
 	}
 
 	return nil
 }
 
-func (f *ffmpeg) Split(ctx context.Context, opts SplitParams) error {
-	// Validate input file before processing
-	if err := f.validateFile(opts.InputPath); err != nil {
-		return fmt.Errorf("track splitting failed on input validation: %w", err)
+// sanitizePath ensures the path is safe and returns an absolute path
+func (f *ffmpeg) sanitizePath(path string) (string, error) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	// Validate cover art if provided
-	if opts.CoverArtPath != "" {
-		if err := f.validateFile(opts.CoverArtPath); err != nil {
-			return fmt.Errorf("track splitting failed on cover art validation: %w", err)
+	// Allow temporary files (system temp directory)
+	tempDir := os.TempDir()
+	if tempDir != "" {
+		absTempDir, err := filepath.Abs(tempDir)
+		if err == nil && strings.HasPrefix(absPath, absTempDir) {
+			return absPath, nil
 		}
 	}
 
-	// Calculate start time and duration
+	// Allow paths within the working directory
+	baseDir, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	if strings.HasPrefix(absPath, baseDir) {
+		return absPath, nil
+	}
+
+	// Check for path traversal attempts
+	if strings.Contains(path, "..") {
+		return "", fmt.Errorf("%w: path contains '..' which is not allowed", ErrInvalidPath)
+	}
+
+	// For output directories, allow if they're absolute paths without traversal
+	if filepath.IsAbs(path) && !strings.Contains(path, "..") {
+		return absPath, nil
+	}
+
+	return "", fmt.Errorf("%w: path must be within the working directory or a safe absolute path", ErrInvalidPath)
+}
+
+// createTempFile creates a temporary file in the system's temp directory
+func (f *ffmpeg) createTempFile(extension string) (string, error) {
+	const prefix = "audio_segment"
+
+	tempFile, err := os.CreateTemp("", prefix+"_*."+extension)
+	if err != nil {
+		return "", fmt.Errorf("failed to create temporary file: %w", err)
+	}
+	tempPath := tempFile.Name()
+	tempFile.Close()
+	return tempPath, nil
+}
+
+func (f *ffmpeg) Split(ctx context.Context, opts SplitParams) error {
+	if err := f.validateFile(opts.InputPath); err != nil {
+		return fmt.Errorf("track splitting failed: %w", err)
+	}
+
+	if _, ok := supportedExtensions[opts.FileExtension]; !ok {
+		return fmt.Errorf("%w: %s", ErrInvalidExtension, opts.FileExtension)
+	}
+
+	if opts.CoverArtPath != "" {
+		if err := f.validateFile(opts.CoverArtPath); err != nil {
+			return fmt.Errorf("cover art validation failed: %w", err)
+		}
+	}
+
+	sanitizedOutputPath, err := f.sanitizePath(opts.OutputPath)
+	if err != nil {
+		return fmt.Errorf("invalid output path: %w", err)
+	}
+
 	startSeconds, err := timeToSeconds(opts.Track.StartTime)
 	if err != nil {
 		return fmt.Errorf("error parsing start time for track %d: %w", opts.Track.TrackNumber, err)
@@ -94,26 +211,23 @@ func (f *ffmpeg) Split(ctx context.Context, opts SplitParams) error {
 		duration = endSeconds - startSeconds
 	}
 
-	// Define temporary file path for the audio segment
-	tempAudio := fmt.Sprintf("%s_temp.%s", opts.OutputPath, opts.FileExtension)
-
+	tempAudio, err := f.createTempFile(opts.FileExtension)
+	if err != nil {
+		return fmt.Errorf("failed to create temporary file: %w", err)
+	}
 	defer os.Remove(tempAudio)
 
-	// First pass: Extract audio segment
 	if err := f.extractAudio(ctx, opts.InputPath, startSeconds, duration, tempAudio); err != nil {
 		return err
 	}
 
-	// Check for cancellation between passes
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	default:
 	}
 
-	// Second pass: Attach metadata and cover art
-	finalPath := fmt.Sprintf("%s.%s", opts.OutputPath, opts.FileExtension)
-
+	finalPath := fmt.Sprintf("%s.%s", sanitizedOutputPath, opts.FileExtension)
 	return f.addMetadataAndCover(ctx, tempAudio, finalPath, opts)
 }
 
@@ -125,39 +239,29 @@ func (f *ffmpeg) extractAudio(ctx context.Context, inputPath string, startSecond
 		"duration", fmt.Sprintf("%.3f", duration),
 	)
 
-	// Make sure the output directory exists
-	outputDir := filepath.Dir(outputPath)
+	sanitizedOutputPath, err := f.sanitizePath(outputPath)
+	if err != nil {
+		return fmt.Errorf("invalid output path: %w", err)
+	}
+
+	outputDir := filepath.Dir(sanitizedOutputPath)
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	// Get the file extension from the output path
-	ext := filepath.Ext(outputPath)
+	ext := filepath.Ext(sanitizedOutputPath)
 	if ext != "" {
 		ext = ext[1:] // Remove the leading dot
 	}
 
-	// Determine appropriate codec and format based on extension
-	outputCodec := "aac"
-	outputFormat := "m4a"
-
-	switch strings.ToLower(ext) {
-	case "mp3":
-		outputCodec = "libmp3lame"
-		outputFormat = "mp3"
-	case "m4a":
-		outputCodec = "aac"
-		outputFormat = "mp4"
-	case "wav":
-		outputCodec = "pcm_s16le"
-		outputFormat = "wav"
-	case "flac":
-		outputCodec = "flac"
-		outputFormat = "flac"
+	codecInfo, ok := supportedExtensions[strings.ToLower(ext)]
+	if !ok {
+		return fmt.Errorf("%w: %s", ErrInvalidExtension, ext)
 	}
 
 	args := []string{
-		"-y", "-i", inputPath,
+		"-y",
+		"-i", inputPath,
 		"-ss", fmt.Sprintf("%.3f", startSeconds),
 	}
 
@@ -167,13 +271,13 @@ func (f *ffmpeg) extractAudio(ctx context.Context, inputPath string, startSecond
 
 	args = append(args,
 		"-map", "0:a",
-		"-c:a", outputCodec,
-		"-f", outputFormat,
-		"-b:a", "128k",
+		"-c:a", codecInfo.codec,
+		"-f", codecInfo.format,
+		"-b:a", defaultAudioBitrate,
 		"-af", "aresample=async=1",
 		"-movflags", "+faststart",
-		"-id3v2_version", "3",
-		outputPath,
+		"-id3v2_version", defaultID3Version,
+		sanitizedOutputPath,
 	)
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
@@ -182,11 +286,7 @@ func (f *ffmpeg) extractAudio(ctx context.Context, inputPath string, startSecond
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		cmdStr := cmd.String()
-		if len(cmdStr) > 200 {
-			cmdStr = cmdStr[:200] + "..." // Truncate very long commands
-		}
-		return fmt.Errorf("ffmpeg extraction error: %s\nCommand: %s\nError: %w", string(output), cmdStr, err)
+		return newFFmpegError(cmd, output, err)
 	}
 
 	return nil
@@ -196,26 +296,17 @@ func (f *ffmpeg) addMetadataAndCover(ctx context.Context, inputPath, outputPath 
 	slog.Debug("Adding metadata and cover art",
 		"input", inputPath,
 		"output", outputPath,
-		"track", opts.Track.Title,
+		"track", opts.Track.Name,
 	)
 
-	// Get the file extension from the output path
 	ext := filepath.Ext(outputPath)
 	if ext != "" {
 		ext = ext[1:] // Remove the leading dot
 	}
 
-	// Determine appropriate format based on extension
-	outputFormat := "mp4"
-	switch strings.ToLower(ext) {
-	case "mp3":
-		outputFormat = "mp3"
-	case "m4a":
-		outputFormat = "mp4"
-	case "wav":
-		outputFormat = "wav"
-	case "flac":
-		outputFormat = "flac"
+	codecInfo, ok := supportedExtensions[strings.ToLower(ext)]
+	if !ok {
+		return fmt.Errorf("%w: %s", ErrInvalidExtension, ext)
 	}
 
 	args := []string{
@@ -226,17 +317,17 @@ func (f *ffmpeg) addMetadataAndCover(ctx context.Context, inputPath, outputPath 
 		"-map", "1:v",
 		"-c:a", "copy",
 		"-c:v", "mjpeg",
-		"-f", outputFormat,
+		"-f", codecInfo.format,
 		"-disposition:v:0", "attached_pic",
 		"-movflags", "+faststart",
-		"-id3v2_version", "3",
+		"-id3v2_version", defaultID3Version,
 	}
 
 	// Add standard metadata
 	metadata := map[string]string{
 		"album_artist": opts.Artist,
 		"artist":       opts.Track.Artist,
-		"title":        opts.Track.Title,
+		"title":        opts.Track.Name,
 		"track":        fmt.Sprintf("%d/%d", opts.Track.TrackNumber, opts.TrackCount),
 		"album":        opts.Name,
 		"compilation":  "1",
@@ -262,12 +353,7 @@ func (f *ffmpeg) addMetadataAndCover(ctx context.Context, inputPath, outputPath 
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		cmdStr := cmd.String()
-		if len(cmdStr) > 200 {
-			cmdStr = cmdStr[:200] + "..." // Truncate very long commands
-		}
-		return fmt.Errorf("ffmpeg metadata error: %s\nCommand: %s\nTrack: %s\nError: %w",
-			string(output), cmdStr, opts.Track.Title, err)
+		return newFFmpegError(cmd, output, err)
 	}
 
 	return nil

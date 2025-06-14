@@ -1,6 +1,6 @@
 # DJ Set Downloader
 
-This application downloads DJ sets from SoundCloud and splits them into individual tracks based on a tracklist.
+This application provides an API to download DJ sets and split them into individual tracks based on a provided tracklist.
 
 ## Dependencies
 
@@ -9,12 +9,23 @@ This application downloads DJ sets from SoundCloud and splits them into individu
 
 ## Usage
 
-`go run cmd/main.go -query https://www.1001tracklists.com/tracklist/nn39729/mind-against-afterlife-voyage-006-2017-10-18.html`
+1. **Start the server:**
 
-Original DJ Set on SoundCloud:
+   ```bash
+   go run cmd/main.go
+   ```
 
-[![3HmoNTX.md.png](https://iili.io/3HmoNTX.md.png)](https://freeimage.host/i/3HmoNTX)
+2. **Send a request to the API:**
 
-After Processing with DJ Set Downloader – Individual Tracks in Apple Music:
+   **Example using `curl`:**
 
-[![3HmoXYN.md.png](https://iili.io/3HmoXYN.md.png)](https://freeimage.host/i/3HmoXYN)
+   ```bash
+   curl -X POST http://localhost:8080/api/v1/process \
+   -H "Content-Type: application/json" \
+   -d '{
+     "downloadUrl": "SOUNDCLOUD_URL_OF_THE_SET",
+     "tracklist": "[{\"artist\":\"Artist 1\",\"name\":\"Track 1\",\"startTime\":\"00:00\"},{\"artist\":\"Artist 2\",\"name\":\"Track 2\",\"startTime\":\"03:45\"}]"
+   }'
+   ```
+
+   Replace `SOUNDCLOUD_URL_OF_THE_SET` with the actual URL of the DJ set and update the `tracklist` JSON with the correct track information.

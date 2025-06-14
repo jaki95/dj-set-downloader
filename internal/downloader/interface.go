@@ -3,25 +3,25 @@ package downloader
 import (
 	"context"
 	"fmt"
-
-	"github.com/jaki95/dj-set-downloader/config"
 )
 
-// Downloader handles the downloading of DJ sets.
+// Downloader represents a generic audio downloader interface
 type Downloader interface {
-	FindURL(ctx context.Context, query string) (string, error)
-	Download(ctx context.Context, trackURL, name string, downloadPath string, progressCallback func(int, string)) error
+	// Download downloads audio from the given URL to the output directory
+	// Returns the path to the downloaded file
+	Download(ctx context.Context, url, outputDir string) (string, error)
+
+	// SupportsURL checks if this downloader can handle the given URL
+	SupportsURL(url string) bool
 }
 
-const (
-	SoundCloud = "soundcloud"
-)
-
-func NewDownloader(config *config.Config) (Downloader, error) {
-	switch config.AudioSource {
-	case SoundCloud:
-		return NewSoundCloudDownloader()
-	default:
-		return nil, fmt.Errorf("unknown downloader source: %s", config.AudioSource)
+// GetDownloader returns the appropriate downloader for the given URL
+func GetDownloader(url string) (Downloader, error) {
+	// Check SoundCloud first
+	soundcloudDownloader := NewSoundCloudDownloader()
+	if soundcloudDownloader.SupportsURL(url) {
+		return soundcloudDownloader, nil
 	}
+
+	return nil, fmt.Errorf("no downloader available for URL: %s", url)
 }

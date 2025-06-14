@@ -1,12 +1,11 @@
 log_level: -4
 audio_processor: ffmpeg
-audio_source: soundcloud
 file_extension: m4a
 
-# Storage configuration
 storage:
-
-  
-  # Local storage options
-  output_dir: output
-  
+  type: "local"
+  output_dir: "output"
+  bucket_name: ""
+  object_prefix: ""
+  credentials_file: ""
+  public_base_url: ""
