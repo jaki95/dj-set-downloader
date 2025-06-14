@@ -166,11 +166,6 @@ func (f *ffmpeg) sanitizePath(path string) (string, error) {
 
 // createTempFile creates a temporary file in the system's temp directory
 func (f *ffmpeg) createTempFile(extension string) (string, error) {
-	// Check if extension is supported
-	if _, ok := supportedExtensions[extension]; !ok {
-		return "", fmt.Errorf("%w: %s", ErrInvalidExtension, extension)
-	}
-
 	const prefix = "audio_segment"
 
 	tempFile, err := os.CreateTemp("", prefix+"_*."+extension)
@@ -185,6 +180,10 @@ func (f *ffmpeg) createTempFile(extension string) (string, error) {
 func (f *ffmpeg) Split(ctx context.Context, opts SplitParams) error {
 	if err := f.validateFile(opts.InputPath); err != nil {
 		return fmt.Errorf("track splitting failed: %w", err)
+	}
+
+	if _, ok := supportedExtensions[opts.FileExtension]; !ok {
+		return fmt.Errorf("%w: %s", ErrInvalidExtension, opts.FileExtension)
 	}
 
 	if opts.CoverArtPath != "" {
