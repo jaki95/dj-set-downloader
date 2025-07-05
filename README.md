@@ -138,5 +138,5 @@ file_extension: m4a             # Default output format
 
 storage:
   type: "local"
-  output_dir: "output"          # Legacy - now uses temp storage
+  output_dir: "output"          # Output directory for temporary storage
 ```
