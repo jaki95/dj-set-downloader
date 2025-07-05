@@ -3,13 +3,13 @@ package server
 import (
 	"context"
 	"fmt"
-	"log"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 
+	"github.com/jaki95/dj-set-downloader/internal/audio"
 	"github.com/jaki95/dj-set-downloader/internal/domain"
 	"github.com/jaki95/dj-set-downloader/internal/job"
 )
@@ -81,6 +81,14 @@ func (s *Server) process(ctx context.Context, inputPath string, tracklist domain
 	results := make([]string, len(tracklist.Tracks))
 	errors := make([]error, len(tracklist.Tracks))
 
+	// First, extract cover art from the original file
+	coverArtPath := filepath.Join(tempDir, "cover.jpg")
+	if err := s.audioProcessor.ExtractCoverArt(ctx, inputPath, coverArtPath); err != nil {
+		slog.Warn("Failed to extract cover art", "error", err)
+		// Continue without cover art
+		coverArtPath = ""
+	}
+
 	// Create a semaphore to limit concurrent tasks
 	semaphore := make(chan struct{}, maxConcurrentTasks)
 	var wg sync.WaitGroup
@@ -100,17 +108,32 @@ func (s *Server) process(ctx context.Context, inputPath string, tracklist domain
 			default:
 			}
 
-			// Create output path in temporary directory
-			outputPath := filepath.Join(tempDir, fmt.Sprintf("%02d-%s.%s",
+			// Create output path in temporary directory (without extension)
+			outputPath := filepath.Join(tempDir, fmt.Sprintf("%02d-%s",
 				i+1,
-				SanitizeFilename(track.Name),
-				strings.ToLower(filepath.Ext(inputPath)[1:])))
+				SanitizeFilename(track.Name)))
 
-			// TODO: Implement actual splitting
-			// For now, create placeholder files
-			log.Printf("Processing track %d: %s", i+1, track.Name)
+			// Set up split parameters
+			splitParams := audio.SplitParams{
+				InputPath:     inputPath,
+				OutputPath:    outputPath,
+				FileExtension: strings.ToLower(filepath.Ext(inputPath)[1:]),
+				Track:         *track,
+				TrackCount:    len(tracklist.Tracks),
+				Artist:        tracklist.Artist,
+				Name:          tracklist.Name,
+				CoverArtPath:  coverArtPath,
+			}
 
-			results[i] = outputPath
+			// Actually split the audio file
+			if err := s.audioProcessor.Split(ctx, splitParams); err != nil {
+				slog.Error("Failed to split audio track", "track", track.Name, "error", err)
+				errors[i] = err
+				return
+			}
+
+			slog.Info("Successfully processed track", "track", track.Name)
+			results[i] = outputPath + "." + splitParams.FileExtension
 		}(i, track)
 	}
 

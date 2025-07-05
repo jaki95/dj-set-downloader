@@ -9,21 +9,24 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jaki95/dj-set-downloader/config"
+	"github.com/jaki95/dj-set-downloader/internal/audio"
 	"github.com/jaki95/dj-set-downloader/internal/job"
 )
 
 // Server handles HTTP requests for the DJ set processor
 type Server struct {
-	cfg        *config.Config
-	jobManager *job.Manager
-	router     *gin.Engine
+	cfg            *config.Config
+	jobManager     *job.Manager
+	router         *gin.Engine
+	audioProcessor audio.Processor
 }
 
 // New creates a new server instance
 func New(cfg *config.Config) *Server {
 	return &Server{
-		cfg:        cfg,
-		jobManager: job.NewManager(),
+		cfg:            cfg,
+		jobManager:     job.NewManager(),
+		audioProcessor: audio.NewFFMPEGEngine(),
 	}
 }
 
