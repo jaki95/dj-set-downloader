@@ -38,6 +38,9 @@ func (s *Server) Start() error {
 		return err
 	}
 
+	// Start the file cleanup worker
+	s.StartCleanupWorker()
+
 	slog.Info("Starting server", "port", s.cfg.Server.Port)
 	return router.Run(":" + s.cfg.Server.Port)
 }
@@ -56,5 +59,10 @@ func (s *Server) setupRoutes(router *gin.Engine) {
 		api.GET("/jobs", s.listJobs)
 		api.GET("/jobs/:id", s.getJobStatus)
 		api.POST("/jobs/:id/cancel", s.cancelJob)
+
+		// Download endpoints
+		api.GET("/jobs/:id/download", s.downloadAllTracks)
+		api.GET("/jobs/:id/tracks", s.getTracksInfo)
+		api.GET("/jobs/:id/tracks/:trackNumber/download", s.downloadTrack)
 	}
 }

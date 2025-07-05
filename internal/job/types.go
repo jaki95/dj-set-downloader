@@ -10,17 +10,21 @@ import (
 
 // Status represents the current state of a processing job
 type Status struct {
-	ID         string           `json:"id"`
-	Status     string           `json:"status"`
-	Progress   float64          `json:"progress"`
-	Message    string           `json:"message"`
-	Error      string           `json:"error,omitempty"`
-	Results    []string         `json:"results,omitempty"`
-	Events     []progress.Event `json:"events"`
-	StartTime  time.Time        `json:"startTime"`
-	EndTime    *time.Time       `json:"endTime,omitempty"`
-	Tracklist  domain.Tracklist `json:"tracklist"`
-	cancelFunc context.CancelFunc
+	ID        string           `json:"id"`
+	Status    string           `json:"status"`
+	Progress  float64          `json:"progress"`
+	Message   string           `json:"message"`
+	Error     string           `json:"error,omitempty"`
+	Results   []string         `json:"results,omitempty"`
+	Events    []progress.Event `json:"events"`
+	StartTime time.Time        `json:"startTime"`
+	EndTime   *time.Time       `json:"endTime,omitempty"`
+	Tracklist domain.Tracklist `json:"tracklist"`
+
+	DownloadAllURL string `json:"download_all_url,omitempty"`
+	TotalTracks    int    `json:"total_tracks,omitempty"`
+
+	cancelFunc context.CancelFunc `json:"-"`
 }
 
 // Request represents the request body for processing a URL
@@ -38,6 +42,14 @@ type Response struct {
 	PageSize   int       `json:"pageSize"`
 	TotalJobs  int       `json:"totalJobs"`
 	TotalPages int       `json:"totalPages"`
+}
+
+// TracksInfoResponse represents the response for tracks info endpoint
+type TracksInfoResponse struct {
+	JobID          string          `json:"job_id"`
+	Tracks         []*domain.Track `json:"tracks"`
+	TotalTracks    int             `json:"total_tracks"`
+	DownloadAllURL string          `json:"download_all_url"`
 }
 
 // Constants for job status
