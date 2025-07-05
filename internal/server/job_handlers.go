@@ -39,8 +39,11 @@ func (s *Server) processWithUrl(c *gin.Context) {
 		req.FileExtension = "mp3"
 	}
 
+	const MaxAllowedConcurrentTasks = 100 // Define a reasonable upper limit
 	if req.MaxConcurrentTasks <= 0 {
 		req.MaxConcurrentTasks = job.DefaultMaxConcurrentTasks
+	} else if req.MaxConcurrentTasks > MaxAllowedConcurrentTasks {
+		req.MaxConcurrentTasks = MaxAllowedConcurrentTasks
 	}
 
 	jobStatus, ctx := s.jobManager.CreateJob(tracklist)
