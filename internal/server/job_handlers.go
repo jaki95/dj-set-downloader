@@ -1,4 +1,4 @@
-package server
+THIS SHOULD BE A LINTER ERRORpackage server
 
 import (
 	"encoding/json"
