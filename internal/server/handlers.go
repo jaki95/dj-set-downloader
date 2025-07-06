@@ -80,7 +80,7 @@ func (s *Server) processUrlInBackground(ctx context.Context, jobID string, url s
 	slog.Info("Successfully downloaded audio file", "downloadedFile", downloadedFile)
 
 	// Split the audio file
-	results, err := s.process(ctx, downloadedFile, tracklist, req.MaxConcurrentTasks, tempDir)
+	results, err := s.process(ctx, downloadedFile, tracklist, req.MaxConcurrentTasks, tempDir, req.FileExtension)
 	if err != nil {
 		if updateErr := s.jobManager.UpdateJobStatus(jobID, job.StatusFailed, []string{}, err.Error()); updateErr != nil {
 			slog.Warn("Failed to update job status to failed", "error", updateErr)
@@ -95,7 +95,7 @@ func (s *Server) processUrlInBackground(ctx context.Context, jobID string, url s
 }
 
 // process handles the splitting of audio files
-func (s *Server) process(ctx context.Context, inputPath string, tracklist domain.Tracklist, maxConcurrentTasks int, tempDir string) ([]string, error) {
+func (s *Server) process(ctx context.Context, inputPath string, tracklist domain.Tracklist, maxConcurrentTasks int, tempDir string, requestedExtension string) ([]string, error) {
 	results := make([]string, len(tracklist.Tracks))
 	errors := make([]error, len(tracklist.Tracks))
 
@@ -131,11 +131,17 @@ func (s *Server) process(ctx context.Context, inputPath string, tracklist domain
 				i+1,
 				SanitizeFilename(track.Name)))
 
+			// Determine the file extension to use
+			fileExtension := s.getFileExtension(inputPath)
+			if requestedExtension != "" {
+				fileExtension = strings.ToLower(requestedExtension)
+			}
+
 			// Set up split parameters
 			splitParams := audio.SplitParams{
 				InputPath:     inputPath,
 				OutputPath:    outputPath,
-				FileExtension: strings.ToLower(filepath.Ext(inputPath)[1:]),
+				FileExtension: fileExtension,
 				Track:         *track,
 				TrackCount:    len(tracklist.Tracks),
 				Artist:        tracklist.Artist,

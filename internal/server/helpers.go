@@ -114,7 +114,7 @@ func (s *Server) addFileToZip(zipWriter *zip.Writer, filePath string, trackNumbe
 	defer file.Close()
 
 	// Create ZIP entry with proper filename
-	ext := strings.ToLower(filepath.Ext(filePath)[1:])
+	ext := s.getFileExtension(filePath)
 	zipFileName := fmt.Sprintf("%02d-%s.%s", trackNumber, SanitizeFilename(track.Name), ext)
 
 	zipEntry, err := zipWriter.Create(zipFileName)
@@ -129,4 +129,13 @@ func (s *Server) addFileToZip(zipWriter *zip.Writer, filePath string, trackNumbe
 	}
 
 	return nil
+}
+
+// getFileExtension safely extracts the file extension without causing index out of bounds
+func (s *Server) getFileExtension(filePath string) string {
+	ext := filepath.Ext(filePath)
+	if ext == "" {
+		return "mp3" // Default extension if none found
+	}
+	return strings.ToLower(ext[1:]) // Remove the dot and convert to lowercase
 }
