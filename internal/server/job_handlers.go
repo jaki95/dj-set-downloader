@@ -85,6 +85,9 @@ func (s *Server) getJobStatus(c *gin.Context) {
 	}
 	tracklistCopy.Tracks = tracksCopy
 
+	// Replace the jobStatus tracklist with the defensive copy
+	jobStatus.Tracklist = tracklistCopy
+
 		// Enhance tracks with download information
 		for i, trackPath := range jobStatus.Results {
 			if i < len(jobStatus.Tracklist.Tracks) {
