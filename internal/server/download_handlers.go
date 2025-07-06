@@ -4,9 +4,7 @@ import (
 	"archive/zip"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jaki95/dj-set-downloader/internal/domain"
@@ -114,7 +112,7 @@ func (s *Server) downloadTrack(c *gin.Context) {
 	fileName := fmt.Sprintf("%02d-%s.%s",
 		trackNumber,
 		SanitizeFilename(track.Name),
-		strings.ToLower(filepath.Ext(trackPath)[1:]))
+		s.getFileExtension(trackPath))
 
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", fileName))
 	c.File(trackPath)
