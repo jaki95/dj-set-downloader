@@ -39,10 +39,14 @@ func (s *Server) downloadAllTracks(c *gin.Context) {
 		return
 	}
 
-	// Pre-validate all files exist before starting ZIP creation
+	// Pre-validate all files exist and metadata is available before starting ZIP creation
 	for i, trackPath := range jobStatus.Results {
 		if _, err := os.Stat(trackPath); os.IsNotExist(err) {
 			c.JSON(404, gin.H{"error": fmt.Sprintf("Track file %d not found", i+1)})
+			return
+		}
+		if i >= len(jobStatus.Tracklist.Tracks) {
+			c.JSON(500, gin.H{"error": fmt.Sprintf("Track %d metadata not found", i+1)})
 			return
 		}
 	}
@@ -62,14 +66,9 @@ func (s *Server) downloadAllTracks(c *gin.Context) {
 
 	// Add each track to the ZIP
 	for i, trackPath := range jobStatus.Results {
-		if i >= len(jobStatus.Tracklist.Tracks) {
-			c.JSON(500, gin.H{"error": fmt.Sprintf("Track %d metadata not found", i+1)})
-			return
-		}
 		if err := s.addFileToZip(zipWriter, trackPath, i+1, jobStatus.Tracklist.Tracks[i]); err != nil {
 			// Cannot send JSON error response after ZIP headers are set
-			// Log the error and close the ZIP writer gracefully
-			zipWriter.Close()
+			// Log the error and return early - defer will handle closing
 			return
 		}
 	}
