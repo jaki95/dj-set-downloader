@@ -107,8 +107,15 @@ func (s *Server) process(ctx context.Context, inputPath string, tracklist domain
 		coverArtPath = ""
 	}
 
+	// Validate and sanitize maxConcurrentTasks to prevent excessive memory allocation
+	validatedMaxConcurrentTasks := job.ValidateMaxConcurrentTasks(maxConcurrentTasks)
+	if validatedMaxConcurrentTasks != maxConcurrentTasks {
+		slog.Warn("MaxConcurrentTasks value was capped for security", 
+			"requested", maxConcurrentTasks, "capped_to", validatedMaxConcurrentTasks)
+	}
+
 	// Create a semaphore to limit concurrent tasks
-	semaphore := make(chan struct{}, maxConcurrentTasks)
+	semaphore := make(chan struct{}, validatedMaxConcurrentTasks)
 	var wg sync.WaitGroup
 
 	for i, track := range tracklist.Tracks {

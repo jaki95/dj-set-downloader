@@ -79,4 +79,17 @@ const (
 // Constants for configuration
 const (
 	DefaultMaxConcurrentTasks = 4
+	MaxAllowedConcurrentTasks = 100 // Safety limit to prevent excessive memory allocation
 )
+
+// ValidateMaxConcurrentTasks validates and sanitizes the maxConcurrentTasks value
+// to prevent excessive memory allocation attacks
+func ValidateMaxConcurrentTasks(maxConcurrentTasks int) int {
+	if maxConcurrentTasks <= 0 {
+		return DefaultMaxConcurrentTasks
+	}
+	if maxConcurrentTasks > MaxAllowedConcurrentTasks {
+		return MaxAllowedConcurrentTasks
+	}
+	return maxConcurrentTasks
+}
