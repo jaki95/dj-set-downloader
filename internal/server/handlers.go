@@ -11,6 +11,7 @@ import (
 
 	"github.com/jaki95/dj-set-downloader/internal/audio"
 	"github.com/jaki95/dj-set-downloader/internal/domain"
+	"github.com/jaki95/dj-set-downloader/internal/downloader"
 	"github.com/jaki95/dj-set-downloader/internal/job"
 )
 
@@ -46,12 +47,6 @@ func (s *Server) processUrlInBackground(ctx context.Context, jobID string, url s
 		slog.Warn("Failed to update job status", "error", err)
 	}
 
-	// Process the URL
-	outputPath := filepath.Join(tempDir, fmt.Sprintf("%s_%s.%s",
-		SanitizeFilename(tracklist.Artist),
-		SanitizeFilename(tracklist.Name),
-		req.FileExtension))
-
 	// Check if context is cancelled before processing
 	select {
 	case <-ctx.Done():
@@ -61,8 +56,31 @@ func (s *Server) processUrlInBackground(ctx context.Context, jobID string, url s
 
 	slog.Info("Processing URL", "url", url)
 
+	// Get the appropriate downloader for the URL
+	dl, err := downloader.GetDownloader(url)
+	if err != nil {
+		slog.Error("Failed to get downloader for URL", "url", url, "error", err)
+		if updateErr := s.jobManager.UpdateJobStatus(jobID, job.StatusFailed, []string{}, err.Error()); updateErr != nil {
+			slog.Warn("Failed to update job status to failed", "error", updateErr)
+		}
+		return
+	}
+
+	// Download the audio file from the URL to the temp directory
+	slog.Info("Downloading audio file", "url", url)
+	downloadedFile, err := dl.Download(ctx, url, tempDir, nil)
+	if err != nil {
+		slog.Error("Failed to download audio file", "url", url, "error", err)
+		if updateErr := s.jobManager.UpdateJobStatus(jobID, job.StatusFailed, []string{}, err.Error()); updateErr != nil {
+			slog.Warn("Failed to update job status to failed", "error", updateErr)
+		}
+		return
+	}
+
+	slog.Info("Successfully downloaded audio file", "downloadedFile", downloadedFile)
+
 	// Split the audio file
-	results, err := s.process(ctx, outputPath, tracklist, req.MaxConcurrentTasks, tempDir)
+	results, err := s.process(ctx, downloadedFile, tracklist, req.MaxConcurrentTasks, tempDir)
 	if err != nil {
 		if updateErr := s.jobManager.UpdateJobStatus(jobID, job.StatusFailed, []string{}, err.Error()); updateErr != nil {
 			slog.Warn("Failed to update job status to failed", "error", updateErr)
