@@ -136,27 +136,32 @@ func (s *Server) getTracksInfo(c *gin.Context) {
 	}
 
 	// Create enhanced tracks with download information
-	enhancedTracks := make([]*domain.Track, len(jobStatus.Results))
-	for i, trackPath := range jobStatus.Results {
-		if i < len(jobStatus.Tracklist.Tracks) {
-			// Create a copy to avoid modifying the original
-			track := *jobStatus.Tracklist.Tracks[i]
+	// Use the minimum of both lengths to avoid nil elements
+	maxTracks := len(jobStatus.Results)
+	if len(jobStatus.Tracklist.Tracks) < maxTracks {
+		maxTracks = len(jobStatus.Tracklist.Tracks)
+	}
+	
+	enhancedTracks := make([]*domain.Track, maxTracks)
+	for i := 0; i < maxTracks; i++ {
+		trackPath := jobStatus.Results[i]
+		// Create a copy to avoid modifying the original
+		track := *jobStatus.Tracklist.Tracks[i]
 
-			// Get file info
-			fileInfo, err := os.Stat(trackPath)
-			available := err == nil
-			var sizeBytes int64 = 0
-			if available {
-				sizeBytes = fileInfo.Size()
-			}
-
-			// Populate download fields
-			track.DownloadURL = fmt.Sprintf("/api/jobs/%s/tracks/%d/download", jobID, i+1)
-			track.SizeBytes = sizeBytes
-			track.Available = available
-
-			enhancedTracks[i] = &track
+		// Get file info
+		fileInfo, err := os.Stat(trackPath)
+		available := err == nil
+		var sizeBytes int64 = 0
+		if available {
+			sizeBytes = fileInfo.Size()
 		}
+
+		// Populate download fields
+		track.DownloadURL = fmt.Sprintf("/api/jobs/%s/tracks/%d/download", jobID, i+1)
+		track.SizeBytes = sizeBytes
+		track.Available = available
+
+		enhancedTracks[i] = &track
 	}
 
 	response := job.TracksInfoResponse{
