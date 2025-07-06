@@ -1,11 +1,6 @@
 log_level: -4
-audio_processor: ffmpeg
 file_extension: m4a
 
 storage:
   type: "local"
   output_dir: "output"
-  bucket_name: ""
-  object_prefix: ""
-  credentials_file: ""
-  public_base_url: ""

@@ -14,7 +14,6 @@ func TestLoad(t *testing.T) {
 		configPath := filepath.Join(tempDir, "test_config.yaml")
 		configContent := `
 log_level: -4
-audio_processor: ffmpeg
 file_extension: m4a
 storage:
   type: "local"
@@ -28,7 +27,6 @@ storage:
 		assert.NoError(t, err)
 		assert.NotNil(t, cfg)
 		assert.Equal(t, -4, cfg.LogLevel)
-		assert.Equal(t, "ffmpeg", cfg.AudioProcessor)
 		assert.Equal(t, "m4a", cfg.FileExtension)
 		assert.Equal(t, "local", cfg.Storage.Type)
 		assert.Equal(t, "test_output", cfg.Storage.OutputDir)

@@ -16,8 +16,8 @@ type JobStatus struct {
 	Error     string           `json:"error,omitempty"`
 	Results   []string         `json:"results,omitempty"`
 	Events    []progress.Event `json:"events"`
-	StartTime time.Time        `json:"startTime"`
-	EndTime   *time.Time       `json:"endTime,omitempty"`
+	StartTime time.Time        `json:"start_time"`
+	EndTime   *time.Time       `json:"end_time,omitempty"`
 	Tracklist domain.Tracklist `json:"tracklist"`
 }
 
@@ -25,15 +25,15 @@ type JobStatus struct {
 type ProcessUrlRequest struct {
 	URL                string `json:"url" binding:"required"`
 	Tracklist          string `json:"tracklist" binding:"required"`
-	FileExtension      string `json:"fileExtension"`
-	MaxConcurrentTasks int    `json:"maxConcurrentTasks"`
+	FileExtension      string `json:"file_extension"`
+	MaxConcurrentTasks int    `json:"max_concurrent_tasks"`
 }
 
 // JobStatusResponse represents the response for job status
 type JobStatusResponse struct {
 	Jobs       []*JobStatus `json:"jobs"`
 	Page       int          `json:"page"`
-	PageSize   int          `json:"pageSize"`
-	TotalJobs  int          `json:"totalJobs"`
-	TotalPages int          `json:"totalPages"`
+	PageSize   int          `json:"page_size"`
+	TotalJobs  int          `json:"total_jobs"`
+	TotalPages int          `json:"total_pages"`
 }

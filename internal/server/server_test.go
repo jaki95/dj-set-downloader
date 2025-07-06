@@ -125,6 +125,74 @@ func TestGetJobStatus_NotFound(t *testing.T) {
 	}
 }
 
+func TestDownloadEndpoints_NotFound(t *testing.T) {
+	server := newTestServer(t)
+
+	tests := []struct {
+		name     string
+		endpoint string
+	}{
+		{"Download all tracks", "/api/jobs/non-existent-job/download"},
+		{"Get tracks info", "/api/jobs/non-existent-job/tracks"},
+		{"Download single track", "/api/jobs/non-existent-job/tracks/1/download"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := http.NewRequest("GET", tt.endpoint, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			rr := httptest.NewRecorder()
+			server.router.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusNotFound {
+				t.Errorf("Expected status %d for %s, got %d", http.StatusNotFound, tt.endpoint, rr.Code)
+			}
+		})
+	}
+}
+
+func TestDownloadTrack_InvalidTrackNumber(t *testing.T) {
+	server := newTestServer(t)
+
+	req, err := http.NewRequest("GET", "/api/jobs/test-job/tracks/invalid/download", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rr := httptest.NewRecorder()
+	server.router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, rr.Code)
+	}
+}
+
+func TestSanitizeFilename(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"Normal Track Name", "Normal Track Name"},
+		{"Track/With\\Slash", "Track_With_Slash"},
+		{"Track:With*Special?Chars", "Track_With_Special_Chars"},
+		{"  Spaced Track  ", "Spaced Track"},
+		{"Track<>With|Pipes", "Track__With_Pipes"},
+		{"Track\"With'Quotes", "Track_With'Quotes"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := SanitizeFilename(tt.input)
+			if result != tt.expected {
+				t.Errorf("SanitizeFilename(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestListJobs(t *testing.T) {
 	server := newTestServer(t)
 	req, err := http.NewRequest("GET", "/api/jobs", nil)

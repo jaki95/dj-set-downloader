@@ -7,9 +7,8 @@ import (
 )
 
 type Config struct {
-	LogLevel       int    `yaml:"log_level"`
-	AudioProcessor string `yaml:"audio_processor"`
-	FileExtension  string `yaml:"file_extension"`
+	LogLevel      int    `yaml:"log_level"`
+	FileExtension string `yaml:"file_extension"`
 
 	Server  ServerConfig  `yaml:"server"`
 	Storage StorageConfig `yaml:"storage"`
@@ -20,17 +19,11 @@ type ServerConfig struct {
 }
 
 type StorageConfig struct {
-	// Type of storage: "local" or "gcs"
+	// Type of storage: "local"
 	Type string `yaml:"type"`
 
 	// Local storage options
 	OutputDir string `yaml:"output_dir"`
-
-	// GCS storage options
-	BucketName      string `yaml:"bucket_name"`
-	ObjectPrefix    string `yaml:"object_prefix"`
-	CredentialsFile string `yaml:"credentials_file"`
-	PublicBaseURL   string `yaml:"public_base_url"`
 }
 
 func Load(path string) (*Config, error) {
