@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jaki95/dj-set-downloader/internal/audio"
+	"github.com/jaki95/dj-set-downloader/pkg/audio"
 	"github.com/jaki95/dj-set-downloader/internal/domain"
-	"github.com/jaki95/dj-set-downloader/internal/downloader"
+	"github.com/jaki95/dj-set-downloader/pkg/downloader"
 	"github.com/jaki95/dj-set-downloader/internal/job"
-	"github.com/jaki95/dj-set-downloader/internal/progress"
+	"github.com/jaki95/dj-set-downloader/pkg/progress"
 )
 
 // process handles download and processing

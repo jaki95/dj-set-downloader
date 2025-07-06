@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/jaki95/dj-set-downloader/internal/domain"
-	"github.com/jaki95/dj-set-downloader/internal/progress"
+	"github.com/jaki95/dj-set-downloader/pkg/progress"
 )
 
 // Status represents the current state of a processing job
