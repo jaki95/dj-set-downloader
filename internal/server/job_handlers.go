@@ -75,8 +75,11 @@ func (s *Server) getJobStatus(c *gin.Context) {
 
 		// Create a copy of the tracklist to avoid modifying the original
 		tracklistCopy := jobStatus.Tracklist
-		tracksCopy := make([]domain.Track, len(tracklistCopy.Tracks))
-		copy(tracksCopy, tracklistCopy.Tracks)
+		tracksCopy := make([]*domain.Track, len(tracklistCopy.Tracks))
+		for i, track := range tracklistCopy.Tracks {
+			trackCopy := *track
+			tracksCopy[i] = &trackCopy
+		}
 		tracklistCopy.Tracks = tracksCopy
 		jobStatus.Tracklist = tracklistCopy
 
