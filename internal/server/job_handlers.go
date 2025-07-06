@@ -45,12 +45,8 @@ func (s *Server) processWithUrl(c *gin.Context) {
 		req.FileExtension = "mp3"
 	}
 
-	const MaxAllowedConcurrentTasks = 10 // Define a reasonable upper limit to prevent memory exhaustion
-	if req.MaxConcurrentTasks <= 0 {
-		req.MaxConcurrentTasks = job.DefaultMaxConcurrentTasks
-	} else if req.MaxConcurrentTasks > MaxAllowedConcurrentTasks {
-		req.MaxConcurrentTasks = MaxAllowedConcurrentTasks
-	}
+	// Validate and sanitize maxConcurrentTasks to prevent excessive memory allocation
+	req.MaxConcurrentTasks = job.ValidateMaxConcurrentTasks(req.MaxConcurrentTasks)
 
 	jobStatus, ctx := s.jobManager.CreateJob(tracklist)
 	go s.processUrlInBackground(ctx, jobStatus.ID, req.URL, tracklist, req)
