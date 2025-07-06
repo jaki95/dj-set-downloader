@@ -52,20 +52,6 @@ func Load(path string) (*Config, error) {
 		config.Server.Port = "8080"
 	}
 
-	// --- Environment variable overrides (12-factor style) ---
-	// These provide a lightweight layering without additional dependencies.
-	if envPort := os.Getenv("SERVER_PORT"); envPort != "" {
-		config.Server.Port = envPort
-	}
-
-	if envStorageType := os.Getenv("STORAGE_TYPE"); envStorageType != "" {
-		config.Storage.Type = envStorageType
-	}
-
-	if envOutputDir := os.Getenv("STORAGE_OUTPUT_DIR"); envOutputDir != "" {
-		config.Storage.OutputDir = envOutputDir
-	}
-
 	if config.Storage.Type == "" {
 		config.Storage.Type = "local"
 	}
