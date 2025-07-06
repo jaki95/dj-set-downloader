@@ -98,14 +98,9 @@ func SanitizeFilename(name string) string {
 
 // createJobTempDir creates a temporary directory for a job
 func (s *Server) createJobTempDir(jobID string) string {
-	tempDir := filepath.Join("/tmp", "djset-server-jobs", jobID)
+	tempDir := filepath.Join(os.TempDir(), "djset-server-jobs", jobID)
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
 		slog.Error("Failed to create temp directory", "dir", tempDir, "error", err)
-		// Fall back to system temp directory
-		tempDir = filepath.Join(os.TempDir(), "djset-server-jobs", jobID)
-		if err := os.MkdirAll(tempDir, 0755); err != nil {
-			slog.Error("Failed to create fallback temp directory", "dir", tempDir, "error", err)
-		}
 	}
 	return tempDir
 }
