@@ -1,4 +1,4 @@
-THIS SHOULD BE A LINTER ERRORpackage server
+package server
 
 import (
 	"encoding/json"
@@ -35,7 +35,7 @@ func (s *Server) processWithUrl(c *gin.Context) {
 		return
 	}
 
-	const MaxAllowedTracks = 100 // Limit the number of tracks to prevent memory exhaustion
+	const MaxAllowedTracks = 100 // Security: Limit track count to prevent memory exhaustion attacks via large slice allocations
 	if len(tracklist.Tracks) > MaxAllowedTracks {
 		c.JSON(400, gin.H{"error": fmt.Sprintf("%v: maximum %d tracks allowed", job.ErrInvalidTracklist, MaxAllowedTracks)})
 		return
@@ -81,7 +81,7 @@ func (s *Server) getJobStatus(c *gin.Context) {
 
 		// Create a copy of the tracklist to avoid modifying the original
 		tracklistCopy := jobStatus.Tracklist
-		tracksCopy := make([]domain.Track, len(tracklistCopy.Tracks))
+		tracksCopy := make([]*domain.Track, len(tracklistCopy.Tracks))
 		copy(tracksCopy, tracklistCopy.Tracks)
 		tracklistCopy.Tracks = tracksCopy
 		jobStatus.Tracklist = tracklistCopy
