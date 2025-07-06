@@ -1,0 +1,56 @@
+[tool.poetry]
+name = "dj-set-downloader-api-client"
+version = "1.0.0"
+description = "A Python client library for accessing DJ Set Downloader API"
+authors = ["DJ Set Downloader Team <contact@djsetdownloader.com>"]
+readme = "README.md"
+homepage = "https://github.com/jaki95/dj-set-downloader"
+repository = "https://github.com/jaki95/dj-set-downloader"
+documentation = "https://github.com/jaki95/dj-set-downloader"
+keywords = ["api", "client", "dj", "music", "downloader", "soundcloud"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+packages = [
+    {include = "dj_set_downloader_api_client"},
+]
+include = ["CHANGELOG.md", "dj_set_downloader_api_client/py.typed"]
+
+
+[tool.poetry.dependencies]
+python = "^3.9"
+httpx = ">=0.23.0,<0.29.0"
+attrs = ">=22.2.0"
+python-dateutil = "^2.8.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.0.0"
+pytest-asyncio = "^0.21.0"
+mypy = "^1.0.0"
+ruff = "^0.1.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
