@@ -1,0 +1,258 @@
+basePath: /
+definitions:
+  domain.Track:
+    properties:
+      artist:
+        type: string
+      end_time:
+        type: string
+      name:
+        type: string
+      start_time:
+        type: string
+      track_number:
+        type: integer
+    type: object
+  domain.Tracklist:
+    properties:
+      artist:
+        type: string
+      genre:
+        type: string
+      name:
+        type: string
+      tracks:
+        items:
+          $ref: '#/definitions/domain.Track'
+        type: array
+      year:
+        type: integer
+    type: object
+  job.Request:
+    properties:
+      fileExtension:
+        type: string
+      maxConcurrentTasks:
+        type: integer
+      tracklist:
+        type: string
+      url:
+        type: string
+    required:
+    - tracklist
+    - url
+    type: object
+  job.Response:
+    properties:
+      jobs:
+        items:
+          $ref: '#/definitions/job.Status'
+        type: array
+      page:
+        type: integer
+      pageSize:
+        type: integer
+      totalJobs:
+        type: integer
+      totalPages:
+        type: integer
+    type: object
+  job.Status:
+    properties:
+      endTime:
+        type: string
+      error:
+        type: string
+      events:
+        items:
+          $ref: '#/definitions/progress.Event'
+        type: array
+      id:
+        type: string
+      message:
+        type: string
+      progress:
+        type: number
+      results:
+        items:
+          type: string
+        type: array
+      startTime:
+        type: string
+      status:
+        type: string
+      tracklist:
+        $ref: '#/definitions/domain.Tracklist'
+    type: object
+  progress.Event:
+    properties:
+      data:
+        items:
+          type: integer
+        type: array
+      error:
+        type: string
+      message:
+        type: string
+      progress:
+        type: number
+      stage:
+        $ref: '#/definitions/progress.Stage'
+      timestamp:
+        type: string
+      trackDetails:
+        $ref: '#/definitions/progress.TrackDetails'
+    type: object
+  progress.Stage:
+    enum:
+    - initializing
+    - importing
+    - downloading
+    - processing
+    - complete
+    - error
+    type: string
+    x-enum-varnames:
+    - StageInitializing
+    - StageImporting
+    - StageDownloading
+    - StageProcessing
+    - StageComplete
+    - StageError
+  progress.TrackDetails:
+    properties:
+      currentTrack:
+        type: string
+      processedTracks:
+        type: integer
+      totalTracks:
+        type: integer
+      trackNumber:
+        type: integer
+    type: object
+  server.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  server.MessageResponse:
+    properties:
+      message:
+        type: string
+    type: object
+info:
+  contact: {}
+  description: This API allows clients to submit DJ set URLs with tracklists for processing
+    and manage background jobs.
+  title: DJ Set Downloader API
+  version: "1.0"
+paths:
+  /api/jobs:
+    get:
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/job.Response'
+      summary: List jobs
+      tags:
+      - Jobs
+  /api/jobs/{id}:
+    get:
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/job.Status'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+      summary: Get job status
+      tags:
+      - Jobs
+  /api/jobs/{id}/cancel:
+    post:
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/server.MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+      summary: Cancel a job
+      tags:
+      - Jobs
+  /api/process:
+    post:
+      consumes:
+      - application/json
+      description: Submits a job that downloads and processes the given DJ set URL
+        using the supplied tracklist.
+      parameters:
+      - description: Processing parameters
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/job.Request'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/server.MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+      summary: Start processing a DJ set URL
+      tags:
+      - Jobs
+  /health:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/server.MessageResponse'
+      summary: Health check
+      tags:
+      - Utility
+swagger: "2.0"

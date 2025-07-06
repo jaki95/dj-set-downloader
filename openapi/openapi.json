@@ -1,0 +1,417 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "description": "This API allows clients to submit DJ set URLs with tracklists for processing and manage background jobs.",
+    "title": "DJ Set Downloader API",
+    "contact": {},
+    "version": "1.0"
+  },
+  "paths": {
+    "/api/jobs": {
+      "get": {
+        "summary": "List jobs",
+        "description": "",
+        "tags": [
+          "Jobs"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/job.Response"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "type": "integer",
+            "description": "Page number",
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "type": "integer",
+            "description": "Page size",
+            "name": "pageSize",
+            "in": "query"
+          }
+        ]
+      }
+    },
+    "/api/jobs/{id}": {
+      "get": {
+        "summary": "Get job status",
+        "description": "",
+        "tags": [
+          "Jobs"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/job.Status"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/server.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Job ID",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ]
+      }
+    },
+    "/api/jobs/{id}/cancel": {
+      "post": {
+        "summary": "Cancel a job",
+        "description": "",
+        "tags": [
+          "Jobs"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/server.MessageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/server.ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/server.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Job ID",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ]
+      }
+    },
+    "/api/process": {
+      "post": {
+        "summary": "Start processing a DJ set URL",
+        "description": "Submits a job that downloads and processes the given DJ set URL using the supplied tracklist.",
+        "tags": [
+          "Jobs"
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/server.MessageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/server.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/job.Request"
+              }
+            }
+          },
+          "description": "Processing parameters"
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health check",
+        "description": "",
+        "tags": [
+          "Utility"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/server.MessageResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "domain.Track": {
+        "type": "object",
+        "properties": {
+          "artist": {
+            "type": "string"
+          },
+          "end_time": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "start_time": {
+            "type": "string"
+          },
+          "track_number": {
+            "type": "integer"
+          }
+        }
+      },
+      "domain.Tracklist": {
+        "type": "object",
+        "properties": {
+          "artist": {
+            "type": "string"
+          },
+          "genre": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "tracks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/domain.Track"
+            }
+          },
+          "year": {
+            "type": "integer"
+          }
+        }
+      },
+      "job.Request": {
+        "type": "object",
+        "required": [
+          "tracklist",
+          "url"
+        ],
+        "properties": {
+          "fileExtension": {
+            "type": "string"
+          },
+          "maxConcurrentTasks": {
+            "type": "integer"
+          },
+          "tracklist": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "job.Response": {
+        "type": "object",
+        "properties": {
+          "jobs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/job.Status"
+            }
+          },
+          "page": {
+            "type": "integer"
+          },
+          "pageSize": {
+            "type": "integer"
+          },
+          "totalJobs": {
+            "type": "integer"
+          },
+          "totalPages": {
+            "type": "integer"
+          }
+        }
+      },
+      "job.Status": {
+        "type": "object",
+        "properties": {
+          "endTime": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/progress.Event"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "progress": {
+            "type": "number"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "startTime": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tracklist": {
+            "$ref": "#/components/schemas/domain.Tracklist"
+          }
+        }
+      },
+      "progress.Event": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "progress": {
+            "type": "number"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/progress.Stage"
+          },
+          "timestamp": {
+            "type": "string"
+          },
+          "trackDetails": {
+            "$ref": "#/components/schemas/progress.TrackDetails"
+          }
+        }
+      },
+      "progress.Stage": {
+        "type": "string",
+        "enum": [
+          "initializing",
+          "importing",
+          "downloading",
+          "processing",
+          "complete",
+          "error"
+        ],
+        "x-enum-varnames": [
+          "StageInitializing",
+          "StageImporting",
+          "StageDownloading",
+          "StageProcessing",
+          "StageComplete",
+          "StageError"
+        ]
+      },
+      "progress.TrackDetails": {
+        "type": "object",
+        "properties": {
+          "currentTrack": {
+            "type": "string"
+          },
+          "processedTracks": {
+            "type": "integer"
+          },
+          "totalTracks": {
+            "type": "integer"
+          },
+          "trackNumber": {
+            "type": "integer"
+          }
+        }
+      },
+      "server.ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "server.MessageResponse": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ]
+}
