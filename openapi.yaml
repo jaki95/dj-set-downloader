@@ -1,0 +1,283 @@
+openapi: 3.0.3
+info:
+  title: DJ Set Downloader API
+  description: >-
+    This API allows clients to submit DJ set URLs with tracklists for processing, manage
+    background processing jobs, and retrieve status information.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Returns **OK** if the server is running.
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+  /api/process:
+    post:
+      summary: Start processing a DJ set URL
+      description: >-
+        Submits a job that downloads and processes the given DJ set URL using the
+        provided tracklist. The request is accepted asynchronously; the caller can
+        poll the *Jobs* endpoints for status updates.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcessRequest'
+      responses:
+        '202':
+          description: Job accepted and started in background
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Processing started
+                  jobId:
+                    type: string
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/jobs:
+    get:
+      summary: List jobs
+      description: Returns a paginated list of all jobs.
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+          description: Page number to return (1-based)
+        - in: query
+          name: pageSize
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          description: Number of jobs per page (max 100)
+      responses:
+        '200':
+          description: Paginated list of jobs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobListResponse'
+  /api/jobs/{id}:
+    get:
+      summary: Get job status
+      description: Returns detailed status information for a specific job.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job status details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobStatus'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/jobs/{id}/cancel:
+    post:
+      summary: Cancel a job
+      description: Attempts to cancel a running job.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job cancelled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Job cancelled
+        '400':
+          description: Job could not be cancelled (invalid state)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    ProcessRequest:
+      type: object
+      required:
+        - url
+        - tracklist
+      properties:
+        url:
+          type: string
+          format: uri
+          description: URL of the DJ set to process
+        tracklist:
+          type: string
+          description: JSON-encoded `Tracklist` object describing all tracks in the set
+        fileExtension:
+          type: string
+          description: Desired audio file extension of the output
+          default: mp3
+        maxConcurrentTasks:
+          type: integer
+          description: Maximum number of concurrent processing tasks
+          default: 4
+    JobStatus:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          description: Current job state
+          enum: [pending, processing, completed, failed, cancelled]
+        progress:
+          type: number
+          format: float
+          description: Completion percentage (0-100)
+        message:
+          type: string
+        error:
+          type: string
+          nullable: true
+        results:
+          type: array
+          items:
+            type: string
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/Event'
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+          nullable: true
+        tracklist:
+          $ref: '#/components/schemas/Tracklist'
+    JobListResponse:
+      type: object
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobStatus'
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalJobs:
+          type: integer
+        totalPages:
+          type: integer
+    Event:
+      type: object
+      properties:
+        stage:
+          type: string
+          enum: [initializing, importing, downloading, processing, complete, error]
+        progress:
+          type: number
+          format: float
+        message:
+          type: string
+        data:
+          type: string
+          format: byte
+          description: Optional base64-encoded additional data
+        timestamp:
+          type: string
+          format: date-time
+        trackDetails:
+          $ref: '#/components/schemas/TrackDetails'
+        error:
+          type: string
+          nullable: true
+    TrackDetails:
+      type: object
+      properties:
+        trackNumber:
+          type: integer
+        totalTracks:
+          type: integer
+        currentTrack:
+          type: string
+        processedTracks:
+          type: integer
+    Tracklist:
+      type: object
+      required:
+        - name
+        - artist
+        - tracks
+      properties:
+        name:
+          type: string
+        year:
+          type: integer
+        artist:
+          type: string
+        genre:
+          type: string
+        tracks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Track'
+    Track:
+      type: object
+      properties:
+        name:
+          type: string
+        artist:
+          type: string
+        start_time:
+          type: string
+        end_time:
+          type: string
+        track_number:
+          type: integer
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
