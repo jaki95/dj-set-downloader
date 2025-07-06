@@ -62,6 +62,10 @@ func (s *Server) downloadAllTracks(c *gin.Context) {
 
 	// Add each track to the ZIP
 	for i, trackPath := range jobStatus.Results {
+		if i >= len(jobStatus.Tracklist.Tracks) {
+			c.JSON(500, gin.H{"error": fmt.Sprintf("Track %d metadata not found", i+1)})
+			return
+		}
 		if err := s.addFileToZip(zipWriter, trackPath, i+1, jobStatus.Tracklist.Tracks[i]); err != nil {
 			// Cannot send JSON error response after ZIP headers are set
 			// Log the error and close the ZIP writer gracefully
@@ -93,7 +97,7 @@ func (s *Server) downloadTrack(c *gin.Context) {
 		return
 	}
 
-	if trackNumber < 1 || trackNumber > len(jobStatus.Results) {
+	if trackNumber < 1 || trackNumber > len(jobStatus.Results) || trackNumber > len(jobStatus.Tracklist.Tracks) {
 		c.JSON(404, gin.H{"error": "Track not found"})
 		return
 	}
