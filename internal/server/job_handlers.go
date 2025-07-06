@@ -35,11 +35,17 @@ func (s *Server) processWithUrl(c *gin.Context) {
 		return
 	}
 
+	const MaxAllowedTracks = 100 // Limit the number of tracks to prevent memory exhaustion
+	if len(tracklist.Tracks) > MaxAllowedTracks {
+		c.JSON(400, gin.H{"error": fmt.Sprintf("%v: maximum %d tracks allowed", job.ErrInvalidTracklist, MaxAllowedTracks)})
+		return
+	}
+
 	if req.FileExtension == "" {
 		req.FileExtension = "mp3"
 	}
 
-	const MaxAllowedConcurrentTasks = 100 // Define a reasonable upper limit
+	const MaxAllowedConcurrentTasks = 10 // Define a reasonable upper limit to prevent memory exhaustion
 	if req.MaxConcurrentTasks <= 0 {
 		req.MaxConcurrentTasks = job.DefaultMaxConcurrentTasks
 	} else if req.MaxConcurrentTasks > MaxAllowedConcurrentTasks {
