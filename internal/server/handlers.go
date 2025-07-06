@@ -132,10 +132,15 @@ func (s *Server) process(ctx context.Context, inputPath string, tracklist domain
 				SanitizeFilename(track.Name)))
 
 			// Set up split parameters
+			ext := filepath.Ext(inputPath)
+			fileExt := ""
+			if len(ext) > 0 {
+				fileExt = strings.ToLower(ext[1:])
+			}
 			splitParams := audio.SplitParams{
 				InputPath:     inputPath,
 				OutputPath:    outputPath,
-				FileExtension: strings.ToLower(filepath.Ext(inputPath)[1:]),
+				FileExtension: fileExt,
 				Track:         *track,
 				TrackCount:    len(tracklist.Tracks),
 				Artist:        tracklist.Artist,

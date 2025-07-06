@@ -112,10 +112,15 @@ func (s *Server) downloadTrack(c *gin.Context) {
 	}
 
 	// Set headers for file download
+	ext := filepath.Ext(trackPath)
+	fileExt := ""
+	if len(ext) > 0 {
+		fileExt = strings.ToLower(ext[1:])
+	}
 	fileName := fmt.Sprintf("%02d-%s.%s",
 		trackNumber,
 		SanitizeFilename(track.Name),
-		strings.ToLower(filepath.Ext(trackPath)[1:]))
+		fileExt)
 
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", fileName))
 	c.File(trackPath)

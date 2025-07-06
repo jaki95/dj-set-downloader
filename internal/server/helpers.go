@@ -114,8 +114,12 @@ func (s *Server) addFileToZip(zipWriter *zip.Writer, filePath string, trackNumbe
 	defer file.Close()
 
 	// Create ZIP entry with proper filename
-	ext := strings.ToLower(filepath.Ext(filePath)[1:])
-	zipFileName := fmt.Sprintf("%02d-%s.%s", trackNumber, SanitizeFilename(track.Name), ext)
+	ext := filepath.Ext(filePath)
+	fileExt := ""
+	if len(ext) > 0 {
+		fileExt = strings.ToLower(ext[1:])
+	}
+	zipFileName := fmt.Sprintf("%02d-%s.%s", trackNumber, SanitizeFilename(track.Name), fileExt)
 
 	zipEntry, err := zipWriter.Create(zipFileName)
 	if err != nil {
