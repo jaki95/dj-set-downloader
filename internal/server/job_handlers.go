@@ -75,10 +75,15 @@ func (s *Server) getJobStatus(c *gin.Context) {
 		jobStatus.DownloadAllURL = fmt.Sprintf("/api/jobs/%s/download", jobID)
 		jobStatus.TotalTracks = len(jobStatus.Results)
 
-	// Create a copy of the tracklist to avoid modifying the original
-	tracklistCopy := jobStatus.Tracklist
-	tracksCopy := make([]*domain.Track, len(tracklistCopy.Tracks))
-	for i, track := range tracklistCopy.Tracks {
+	// Create a deep copy of the tracklist to avoid modifying the original
+	tracklistCopy := domain.Tracklist{
+		Name:   jobStatus.Tracklist.Name,
+		Year:   jobStatus.Tracklist.Year,
+		Artist: jobStatus.Tracklist.Artist,
+		Genre:  jobStatus.Tracklist.Genre,
+	}
+	tracksCopy := make([]*domain.Track, len(jobStatus.Tracklist.Tracks))
+	for i, track := range jobStatus.Tracklist.Tracks {
 		// Create a copy of each track to avoid modifying the original
 		trackCopy := *track
 		tracksCopy[i] = &trackCopy
