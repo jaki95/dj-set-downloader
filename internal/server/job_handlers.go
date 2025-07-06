@@ -59,22 +59,30 @@ func (s *Server) processWithUrl(c *gin.Context) {
 func (s *Server) getJobStatus(c *gin.Context) {
 	jobID := c.Param("id")
 
-	jobStatus, err := s.jobManager.GetJob(jobID)
+	originalJobStatus, err := s.jobManager.GetJob(jobID)
 	if err != nil {
 		c.JSON(404, gin.H{"error": fmt.Sprintf("%v: %s", job.ErrNotFound, jobID)})
 		return
 	}
 
+	// Create a copy of the job status to avoid race conditions
+	jobStatus := *originalJobStatus
+	
 	// Enhance the job status with download information if job is completed
 	if jobStatus.Status == job.StatusCompleted && len(jobStatus.Results) > 0 {
 		jobStatus.DownloadAllURL = fmt.Sprintf("/api/jobs/%s/download", jobID)
 		jobStatus.TotalTracks = len(jobStatus.Results)
 
+		// Create a copy of the tracklist to avoid modifying the original
+		tracklistCopy := jobStatus.Tracklist
+		tracksCopy := make([]domain.Track, len(tracklistCopy.Tracks))
+		copy(tracksCopy, tracklistCopy.Tracks)
+		tracklistCopy.Tracks = tracksCopy
+		jobStatus.Tracklist = tracklistCopy
+
 		// Enhance tracks with download information
 		for i, trackPath := range jobStatus.Results {
 			if i < len(jobStatus.Tracklist.Tracks) {
-				track := jobStatus.Tracklist.Tracks[i]
-
 				// Get file info
 				fileInfo, err := os.Stat(trackPath)
 				available := err == nil
@@ -83,10 +91,10 @@ func (s *Server) getJobStatus(c *gin.Context) {
 					sizeBytes = fileInfo.Size()
 				}
 
-				// Populate download fields
-				track.DownloadURL = fmt.Sprintf("/api/jobs/%s/tracks/%d/download", jobID, i+1)
-				track.SizeBytes = sizeBytes
-				track.Available = available
+				// Populate download fields on the copied track
+				jobStatus.Tracklist.Tracks[i].DownloadURL = fmt.Sprintf("/api/jobs/%s/tracks/%d/download", jobID, i+1)
+				jobStatus.Tracklist.Tracks[i].SizeBytes = sizeBytes
+				jobStatus.Tracklist.Tracks[i].Available = available
 			}
 		}
 	}
