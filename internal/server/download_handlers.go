@@ -33,6 +33,20 @@ func (s *Server) downloadAllTracks(c *gin.Context) {
 		return
 	}
 
+	// Validate that we have corresponding tracks for all results
+	if len(jobStatus.Results) > len(jobStatus.Tracklist.Tracks) {
+		c.JSON(500, gin.H{"error": "Mismatch between downloaded tracks and tracklist metadata"})
+		return
+	}
+
+	// Pre-validate all files exist before starting ZIP creation
+	for i, trackPath := range jobStatus.Results {
+		if _, err := os.Stat(trackPath); os.IsNotExist(err) {
+			c.JSON(404, gin.H{"error": fmt.Sprintf("Track file %d not found", i+1)})
+			return
+		}
+	}
+
 	// Create ZIP file name
 	zipFileName := fmt.Sprintf("%s - %s.zip",
 		SanitizeFilename(jobStatus.Tracklist.Artist),
@@ -49,7 +63,9 @@ func (s *Server) downloadAllTracks(c *gin.Context) {
 	// Add each track to the ZIP
 	for i, trackPath := range jobStatus.Results {
 		if err := s.addFileToZip(zipWriter, trackPath, i+1, jobStatus.Tracklist.Tracks[i]); err != nil {
-			c.JSON(500, gin.H{"error": fmt.Sprintf("Failed to add track %d to ZIP: %v", i+1, err)})
+			// Cannot send JSON error response after ZIP headers are set
+			// Log the error and close the ZIP writer gracefully
+			zipWriter.Close()
 			return
 		}
 	}
