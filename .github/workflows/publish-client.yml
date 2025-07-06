@@ -1,0 +1,78 @@
+name: publish-python-client
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # Generate OpenAPI specification
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.22
+
+      - name: Install swag CLI
+        run: go install github.com/swaggo/swag/cmd/swag@latest
+
+      - name: Generate OpenAPI spec
+        run: swag init -g cmd/main.go -o openapi
+
+      # Build Python client
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install generators & build tools
+        run: |
+          python -m pip install --quiet --upgrade pip
+          pip install --quiet openapi-python-client build twine
+
+      - name: Generate Python client from spec
+        env:
+          VERSION_TAG: ${{ github.ref_name }}
+        run: |
+          VERSION=${VERSION_TAG#v}
+          echo "Building Python client version ${VERSION}"
+          openapi-python-client generate \
+            --path openapi/swagger.json \
+            --output python_client \
+            --force \
+            --package-name dj_set_downloader_client \
+            --package-version ${VERSION}
+
+      - name: Build wheel & sdist
+        run: |
+          cd python_client
+          python -m build --sdist --wheel --outdir dist
+
+      # Publish to PyPI (set PYPI_TOKEN secret) - comment out if using GitHub Packages instead
+      - name: Publish package to PyPI
+        if: secrets.PYPI_TOKEN != ''
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: |
+          cd python_client
+          twine upload --non-interactive dist/*
+
+      # Alternatively publish to GitHub Packages (requires GH_TOKEN secret with write:packages)
+      - name: Publish to GitHub Packages
+        if: secrets.GH_PACKAGES_TOKEN != ''
+        env:
+          TWINE_USERNAME: ${{ github.actor }}
+          TWINE_PASSWORD: ${{ secrets.GH_PACKAGES_TOKEN }}
+          TWINE_REPOSITORY_URL: https://pypi.pkg.github.com/${{ github.repository_owner }}
+        run: |
+          cd python_client
+          twine upload --non-interactive dist/*
