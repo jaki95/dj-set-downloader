@@ -45,9 +45,7 @@ func (s *Server) Start() error {
 // setupRoutes configures the HTTP routes
 func (s *Server) setupRoutes(router *gin.Engine) {
 	// Health check
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
-	})
+	router.GET("/health", s.health)
 
 	// API routes
 	api := router.Group("/api")

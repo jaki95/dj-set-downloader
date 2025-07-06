@@ -9,6 +9,11 @@ import (
 	"github.com/jaki95/dj-set-downloader/internal/server"
 )
 
+//  @title           DJ Set Downloader API
+//  @version         1.0
+//  @description     This API allows clients to submit DJ set URLs with tracklists for processing and manage background jobs.
+//  @BasePath        /
+
 func main() {
 	port := flag.String("port", "8000", "Port to run the HTTP server on")
 	flag.Parse()

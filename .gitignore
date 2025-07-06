@@ -6,3 +6,5 @@ cookies.json
 .DS_Store
 
 *.mdc
+
+python_client/

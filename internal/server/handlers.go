@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -10,7 +11,16 @@ import (
 	"github.com/jaki95/dj-set-downloader/internal/job"
 )
 
-// processWithUrl handles the processing of a URL with a tracklist
+// processWithUrl godoc
+// @Summary Start processing a DJ set URL
+// @Description Submits a job that downloads and processes the given DJ set URL using the supplied tracklist.
+// @Tags Jobs
+// @Accept json
+// @Produce json
+// @Param request body job.Request true "Processing parameters"
+// @Success 202 {object} MessageResponse
+// @Failure 400 {object} ErrorResponse
+// @Router /api/process [post]
 func (s *Server) processWithUrl(c *gin.Context) {
 	var req job.Request
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -51,7 +61,14 @@ func (s *Server) processWithUrl(c *gin.Context) {
 	})
 }
 
-// getJobStatus handles retrieving the status of a job
+// getJobStatus godoc
+// @Summary Get job status
+// @Tags Jobs
+// @Produce json
+// @Param id path string true "Job ID"
+// @Success 200 {object} job.Status
+// @Failure 404 {object} ErrorResponse
+// @Router /api/jobs/{id} [get]
 func (s *Server) getJobStatus(c *gin.Context) {
 	jobID := c.Param("id")
 
@@ -64,7 +81,15 @@ func (s *Server) getJobStatus(c *gin.Context) {
 	c.JSON(200, jobStatus)
 }
 
-// cancelJob handles cancelling a job
+// cancelJob godoc
+// @Summary Cancel a job
+// @Tags Jobs
+// @Produce json
+// @Param id path string true "Job ID"
+// @Success 200 {object} MessageResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Router /api/jobs/{id}/cancel [post]
 func (s *Server) cancelJob(c *gin.Context) {
 	jobID := c.Param("id")
 
@@ -82,7 +107,14 @@ func (s *Server) cancelJob(c *gin.Context) {
 	c.JSON(200, gin.H{"message": "Job cancelled"})
 }
 
-// listJobs handles listing all jobs
+// listJobs godoc
+// @Summary List jobs
+// @Tags Jobs
+// @Produce json
+// @Param page query int false "Page number"
+// @Param pageSize query int false "Page size"
+// @Success 200 {object} job.Response
+// @Router /api/jobs [get]
 func (s *Server) listJobs(c *gin.Context) {
 	page := 1
 	pageSize := job.DefaultPageSize
@@ -101,4 +133,14 @@ func (s *Server) listJobs(c *gin.Context) {
 
 	response := s.jobManager.ListJobs(page, pageSize)
 	c.JSON(200, response)
+}
+
+// health godoc
+// @Summary Health check
+// @Tags Utility
+// @Produce json
+// @Success 200 {object} MessageResponse
+// @Router /health [get]
+func (s *Server) health(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }

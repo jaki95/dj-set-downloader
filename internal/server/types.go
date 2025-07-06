@@ -37,3 +37,13 @@ type JobStatusResponse struct {
 	TotalJobs  int          `json:"totalJobs"`
 	TotalPages int          `json:"totalPages"`
 }
+
+// MessageResponse represents a generic message payload used for success responses.
+type MessageResponse struct {
+	Message string `json:"message"`
+}
+
+// ErrorResponse represents a generic error payload used for error responses.
+type ErrorResponse struct {
+	Error string `json:"error"`
+}
