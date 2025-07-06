@@ -1,4 +1,4 @@
-name: "CodeQL"
+THIS SHOULD BE A LINTER ERRORname: "CodeQL"
 
 on:
   push:
