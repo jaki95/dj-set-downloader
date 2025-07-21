@@ -7,6 +7,10 @@ type Track struct {
 	StartTime   string `json:"start_time"`
 	EndTime     string `json:"end_time"`
 	TrackNumber int    `json:"track_number"`
+
+	DownloadURL string `json:"download_url,omitempty"`
+	SizeBytes   int64  `json:"size_bytes,omitempty"`
+	Available   bool   `json:"available,omitempty"`
 }
 
 // Tracklist represents a collection of tracks in a DJ set.

@@ -54,6 +54,34 @@ func (m *Manager) GetJob(jobID string) (*Status, error) {
 	return job, nil
 }
 
+// UpdateJobStatus updates a job's status, results, and message
+func (m *Manager) UpdateJobStatus(jobID string, status string, results []string, message string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	job, exists := m.jobs[jobID]
+	if !exists {
+		return fmt.Errorf("%w: %s", ErrNotFound, jobID)
+	}
+
+	job.Status = status
+	job.Results = results
+	job.Message = message
+
+	// Set end time for terminal states
+	if status == StatusCompleted || status == StatusFailed || status == StatusCancelled {
+		endTime := time.Now()
+		job.EndTime = &endTime
+	}
+
+	// Set error field for failed jobs
+	if status == StatusFailed {
+		job.Error = message
+	}
+
+	return nil
+}
+
 // CancelJob cancels a job
 func (m *Manager) CancelJob(jobID string) error {
 	m.mu.Lock()
