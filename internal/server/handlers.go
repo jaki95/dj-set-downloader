@@ -16,24 +16,25 @@ import (
 
 // processUrlInBackground processes a URL in the background
 func (s *Server) processUrlInBackground(ctx context.Context, jobID string, url string, tracklist domain.Tracklist, req job.Request) {
+	tempDir := s.createJobTempDir(jobID)
+
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Debug("Recovered from panic in background process", "panic", r)
 			if err := s.jobManager.UpdateJobStatus(jobID, job.StatusFailed, []string{}, "Internal server error"); err != nil {
 				slog.Warn("Failed to update job status", "error", err)
 			}
+			s.cleanupJobTempDir(jobID, tempDir)
 		}
 	}()
 
 	// Check if context is already cancelled
 	select {
 	case <-ctx.Done():
+		s.cleanupJobTempDir(jobID, tempDir)
 		return
 	default:
 	}
-
-	// Create temporary directory for this job
-	tempDir := s.createJobTempDir(jobID)
 
 	// Update job status to processing
 	if err := s.jobManager.UpdateJobStatus(jobID, job.StatusProcessing, []string{}, "Processing started"); err != nil {
@@ -43,6 +44,7 @@ func (s *Server) processUrlInBackground(ctx context.Context, jobID string, url s
 	// Check if context is cancelled before processing
 	select {
 	case <-ctx.Done():
+		s.cleanupJobTempDir(jobID, tempDir)
 		return
 	default:
 	}
@@ -56,6 +58,7 @@ func (s *Server) processUrlInBackground(ctx context.Context, jobID string, url s
 		if updateErr := s.jobManager.UpdateJobStatus(jobID, job.StatusFailed, []string{}, err.Error()); updateErr != nil {
 			slog.Warn("Failed to update job status to failed", "error", updateErr)
 		}
+		s.cleanupJobTempDir(jobID, tempDir)
 		return
 	}
 
@@ -76,6 +79,7 @@ func (s *Server) processUrlInBackground(ctx context.Context, jobID string, url s
 		if updateErr := s.jobManager.UpdateJobStatus(jobID, job.StatusFailed, []string{}, err.Error()); updateErr != nil {
 			slog.Warn("Failed to update job status to failed", "error", updateErr)
 		}
+		s.cleanupJobTempDir(jobID, tempDir)
 		return
 	}
 
@@ -92,6 +96,7 @@ func (s *Server) processUrlInBackground(ctx context.Context, jobID string, url s
 		if updateErr := s.jobManager.UpdateJobStatus(jobID, job.StatusFailed, []string{}, err.Error()); updateErr != nil {
 			slog.Warn("Failed to update job status to failed", "error", updateErr)
 		}
+		s.cleanupJobTempDir(jobID, tempDir)
 		return
 	}
 
@@ -99,6 +104,9 @@ func (s *Server) processUrlInBackground(ctx context.Context, jobID string, url s
 	if err := s.jobManager.UpdateJobStatus(jobID, job.StatusCompleted, results, "Processing completed"); err != nil {
 		slog.Warn("Failed to update job status to completed", "error", err)
 	}
+
+	// Schedule cleanup of temporary directory after a grace period
+	s.scheduleJobCleanup(jobID, tempDir)
 }
 
 // process handles the splitting of audio files
