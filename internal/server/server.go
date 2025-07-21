@@ -9,16 +9,18 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jaki95/dj-set-downloader/config"
-	"github.com/jaki95/dj-set-downloader/internal/audio"
-	"github.com/jaki95/dj-set-downloader/internal/job"
+	"github.com/jaki95/dj-set-downloader/internal/service/job"
+	"github.com/jaki95/dj-set-downloader/internal/service/processor"
+	"github.com/jaki95/dj-set-downloader/pkg/audio"
 )
 
 // Server handles HTTP requests for the DJ set processor
 type Server struct {
 	cfg            *config.Config
 	jobManager     *job.Manager
-	router         *gin.Engine
+	processor      *processor.Processor
 	audioProcessor audio.Processor
+	router         *gin.Engine
 }
 
 // New creates a new server instance
@@ -26,6 +28,7 @@ func New(cfg *config.Config) *Server {
 	return &Server{
 		cfg:            cfg,
 		jobManager:     job.NewManager(),
+		processor:      processor.NewProcessor(cfg),
 		audioProcessor: audio.NewFFMPEGEngine(),
 	}
 }
@@ -58,7 +61,10 @@ func (s *Server) setupRoutes(router *gin.Engine) {
 	// API routes
 	api := router.Group("/api")
 	{
+		// Process endpoint
 		api.POST("/process", s.processWithUrl)
+
+		// Job management
 		api.GET("/jobs", s.listJobs)
 		api.GET("/jobs/:id", s.getJobStatus)
 		api.POST("/jobs/:id/cancel", s.cancelJob)

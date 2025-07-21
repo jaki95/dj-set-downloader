@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/jaki95/dj-set-downloader/internal/domain"
-	"github.com/jaki95/dj-set-downloader/internal/progress"
+	"github.com/jaki95/dj-set-downloader/internal/pkg/progress"
 )
 
 // Status represents the current state of a processing job
@@ -17,10 +17,11 @@ type Status struct {
 	Error     string           `json:"error,omitempty"`
 	Results   []string         `json:"results,omitempty"`
 	Events    []progress.Event `json:"events"`
-	StartTime time.Time        `json:"startTime"`
-	EndTime   *time.Time       `json:"endTime,omitempty"`
+	StartTime time.Time        `json:"start_time"`
+	EndTime   *time.Time       `json:"end_time,omitempty"`
 	Tracklist domain.Tracklist `json:"tracklist"`
 
+	// Additional fields from main branch
 	DownloadAllURL string `json:"download_all_url,omitempty"`
 	TotalTracks    int    `json:"total_tracks,omitempty"`
 
@@ -31,17 +32,17 @@ type Status struct {
 type Request struct {
 	URL                string `json:"url" binding:"required"`
 	Tracklist          string `json:"tracklist" binding:"required"`
-	FileExtension      string `json:"fileExtension"`
-	MaxConcurrentTasks int    `json:"maxConcurrentTasks"`
+	FileExtension      string `json:"file_extension"`
+	MaxConcurrentTasks int    `json:"max_concurrent_tasks"`
 }
 
 // Response represents the response for job status
 type Response struct {
 	Jobs       []*Status `json:"jobs"`
 	Page       int       `json:"page"`
-	PageSize   int       `json:"pageSize"`
-	TotalJobs  int       `json:"totalJobs"`
-	TotalPages int       `json:"totalPages"`
+	PageSize   int       `json:"page_size"`
+	TotalJobs  int       `json:"total_jobs"`
+	TotalPages int       `json:"total_pages"`
 }
 
 // TracksInfoResponse represents the response for tracks info endpoint

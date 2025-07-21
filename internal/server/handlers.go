@@ -9,10 +9,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/jaki95/dj-set-downloader/internal/audio"
 	"github.com/jaki95/dj-set-downloader/internal/domain"
-	"github.com/jaki95/dj-set-downloader/internal/downloader"
-	"github.com/jaki95/dj-set-downloader/internal/job"
+	"github.com/jaki95/dj-set-downloader/internal/service/job"
+	"github.com/jaki95/dj-set-downloader/pkg/audio"
+	"github.com/jaki95/dj-set-downloader/pkg/downloader"
 )
 
 // processUrlInBackground processes a URL in the background
@@ -110,7 +110,7 @@ func (s *Server) process(ctx context.Context, inputPath string, tracklist domain
 	// Validate and sanitize maxConcurrentTasks to prevent excessive memory allocation
 	validatedMaxConcurrentTasks := job.ValidateMaxConcurrentTasks(maxConcurrentTasks)
 	if validatedMaxConcurrentTasks != maxConcurrentTasks {
-		slog.Warn("MaxConcurrentTasks value was capped for security", 
+		slog.Warn("MaxConcurrentTasks value was capped for security",
 			"requested", maxConcurrentTasks, "capped_to", validatedMaxConcurrentTasks)
 	}
 

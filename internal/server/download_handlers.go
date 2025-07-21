@@ -8,7 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jaki95/dj-set-downloader/internal/domain"
-	"github.com/jaki95/dj-set-downloader/internal/job"
+	"github.com/jaki95/dj-set-downloader/internal/service/job"
 )
 
 // downloadAllTracks handles downloading all tracks for a job as a ZIP file
@@ -139,7 +139,7 @@ func (s *Server) getTracksInfo(c *gin.Context) {
 	if len(jobStatus.Tracklist.Tracks) < maxTracks {
 		maxTracks = len(jobStatus.Tracklist.Tracks)
 	}
-	
+
 	enhancedTracks := make([]*domain.Track, maxTracks)
 	for i := 0; i < maxTracks; i++ {
 		trackPath := jobStatus.Results[i]
