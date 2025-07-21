@@ -69,24 +69,24 @@ func (s *Server) getJobStatus(c *gin.Context) {
 
 	// Create a copy of the job status to avoid race conditions
 	jobStatus := *originalJobStatus
-	
+
 	// Enhance the job status with download information if job is completed
 	if jobStatus.Status == job.StatusCompleted && len(jobStatus.Results) > 0 {
 		jobStatus.DownloadAllURL = fmt.Sprintf("/api/jobs/%s/download", jobID)
 		jobStatus.TotalTracks = len(jobStatus.Results)
 
-	// Create a copy of the tracklist to avoid modifying the original
-	tracklistCopy := jobStatus.Tracklist
-	tracksCopy := make([]*domain.Track, len(tracklistCopy.Tracks))
-	for i, track := range tracklistCopy.Tracks {
-		// Create a copy of each track to avoid modifying the original
-		trackCopy := *track
-		tracksCopy[i] = &trackCopy
-	}
-	tracklistCopy.Tracks = tracksCopy
+		// Create a copy of the tracklist to avoid modifying the original
+		tracklistCopy := jobStatus.Tracklist
+		tracksCopy := make([]*domain.Track, len(tracklistCopy.Tracks))
+		for i, track := range tracklistCopy.Tracks {
+			// Create a copy of each track to avoid modifying the original
+			trackCopy := *track
+			tracksCopy[i] = &trackCopy
+		}
+		tracklistCopy.Tracks = tracksCopy
 
-	// Replace the jobStatus tracklist with the defensive copy
-	jobStatus.Tracklist = tracklistCopy
+		// Replace the jobStatus tracklist with the defensive copy
+		jobStatus.Tracklist = tracklistCopy
 
 		// Enhance tracks with download information
 		for i, trackPath := range jobStatus.Results {

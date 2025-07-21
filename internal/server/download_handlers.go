@@ -139,7 +139,7 @@ func (s *Server) getTracksInfo(c *gin.Context) {
 	if len(jobStatus.Tracklist.Tracks) < maxTracks {
 		maxTracks = len(jobStatus.Tracklist.Tracks)
 	}
-	
+
 	enhancedTracks := make([]*domain.Track, maxTracks)
 	for i := 0; i < maxTracks; i++ {
 		trackPath := jobStatus.Results[i]
