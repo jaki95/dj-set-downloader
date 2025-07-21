@@ -14,67 +14,10 @@ import (
 )
 
 const (
-	// Default TTL for processed files
-	DefaultFileTTL = 24 * time.Hour
-
-	// Cleanup interval for old files
-	CleanupInterval = 2 * time.Hour
+	// Grace period before cleaning up completed job files
+	// This allows users time to download their files after processing completes
+	JobCleanupGracePeriod = 2 * time.Hour
 )
-
-// StartCleanupWorker starts a background worker to clean up old files
-func (s *Server) StartCleanupWorker() {
-	ticker := time.NewTicker(CleanupInterval)
-	go func() {
-		defer ticker.Stop()
-		for range ticker.C {
-			s.cleanupOldFiles()
-		}
-	}()
-	slog.Info("File cleanup worker started", "interval", CleanupInterval)
-}
-
-// cleanupOldFiles removes files older than TTL
-func (s *Server) cleanupOldFiles() {
-	tempJobsDir := filepath.Join(os.TempDir(), "djset-server-jobs")
-	if _, err := os.Stat(tempJobsDir); os.IsNotExist(err) {
-		return
-	}
-
-	cutoffTime := time.Now().Add(-DefaultFileTTL)
-	slog.Debug("Starting cleanup of old files", "cutoff", cutoffTime)
-
-	entries, err := os.ReadDir(tempJobsDir)
-	if err != nil {
-		slog.Error("Failed to read temp jobs directory", "error", err)
-		return
-	}
-
-	cleaned := 0
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-
-		jobDir := filepath.Join(tempJobsDir, entry.Name())
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-
-		if info.ModTime().Before(cutoffTime) {
-			if err := os.RemoveAll(jobDir); err != nil {
-				slog.Error("Failed to remove old job directory", "dir", jobDir, "error", err)
-			} else {
-				slog.Debug("Cleaned up old job directory", "dir", jobDir, "age", time.Since(info.ModTime()))
-				cleaned++
-			}
-		}
-	}
-
-	if cleaned > 0 {
-		slog.Info("Cleanup completed", "directories_cleaned", cleaned)
-	}
-}
 
 // SanitizeFilename sanitizes a filename by removing invalid characters
 func SanitizeFilename(name string) string {
@@ -138,4 +81,32 @@ func (s *Server) getFileExtension(filePath string) string {
 		return "mp3" // Default extension if none found
 	}
 	return strings.ToLower(ext[1:]) // Remove the dot and convert to lowercase
+}
+
+// scheduleJobCleanup schedules the cleanup of a job's temporary directory after a grace period
+func (s *Server) scheduleJobCleanup(jobID string, tempDir string) {
+	go func() {
+		// Wait for the grace period to allow users to download files
+		time.Sleep(JobCleanupGracePeriod)
+
+		// Clean up the temporary directory
+		if err := os.RemoveAll(tempDir); err != nil {
+			slog.Error("Failed to clean up job temporary directory",
+				"jobID", jobID, "tempDir", tempDir, "error", err)
+		} else {
+			slog.Info("Successfully cleaned up job temporary directory",
+				"jobID", jobID, "tempDir", tempDir, "gracePeriod", JobCleanupGracePeriod)
+		}
+	}()
+}
+
+// cleanupJobTempDir immediately cleans up a job's temporary directory (used for failed jobs)
+func (s *Server) cleanupJobTempDir(jobID string, tempDir string) {
+	if err := os.RemoveAll(tempDir); err != nil {
+		slog.Error("Failed to clean up failed job temporary directory",
+			"jobID", jobID, "tempDir", tempDir, "error", err)
+	} else {
+		slog.Debug("Cleaned up failed job temporary directory",
+			"jobID", jobID, "tempDir", tempDir)
+	}
 }

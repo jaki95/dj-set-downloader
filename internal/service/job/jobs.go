@@ -15,7 +15,7 @@ type Status struct {
 	Progress  float64          `json:"progress"`
 	Message   string           `json:"message"`
 	Error     string           `json:"error,omitempty"`
-	Results   []string         `json:"results,omitempty"`
+	Results   []string         `json:"results"`
 	Events    []progress.Event `json:"events"`
 	StartTime time.Time        `json:"start_time"`
 	EndTime   *time.Time       `json:"end_time,omitempty"`

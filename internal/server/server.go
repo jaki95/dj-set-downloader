@@ -44,9 +44,6 @@ func (s *Server) Start() error {
 		return err
 	}
 
-	// Start the file cleanup worker
-	s.StartCleanupWorker()
-
 	slog.Info("Starting server", "port", s.cfg.Server.Port)
 	return router.Run(":" + s.cfg.Server.Port)
 }
