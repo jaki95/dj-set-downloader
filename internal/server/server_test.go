@@ -9,7 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jaki95/dj-set-downloader/config"
-	"github.com/jaki95/dj-set-downloader/internal/job"
+	"github.com/jaki95/dj-set-downloader/internal/service/job"
 )
 
 func newTestServer(t *testing.T) *Server {

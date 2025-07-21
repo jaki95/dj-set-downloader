@@ -10,8 +10,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jaki95/dj-set-downloader/internal/domain"
-	"github.com/jaki95/dj-set-downloader/internal/job"
-	"github.com/jaki95/dj-set-downloader/pkg/progress"
+	"github.com/jaki95/dj-set-downloader/internal/service/job"
+	"github.com/jaki95/dj-set-downloader/internal/pkg/progress"
 )
 
 // processWithUrl handles the processing of a URL with a tracklist

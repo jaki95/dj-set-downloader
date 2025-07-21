@@ -9,15 +9,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jaki95/dj-set-downloader/config"
-	"github.com/jaki95/dj-set-downloader/internal/job"
-	"github.com/jaki95/dj-set-downloader/internal/service"
+	"github.com/jaki95/dj-set-downloader/internal/service/job"
+	"github.com/jaki95/dj-set-downloader/internal/service/processor"
 )
 
 // Server handles HTTP requests for the DJ set processor
 type Server struct {
 	cfg        *config.Config
 	jobManager *job.Manager
-	processor  *service.Processor
+	processor  *processor.Processor
 	router     *gin.Engine
 }
 
@@ -26,7 +26,7 @@ func New(cfg *config.Config) *Server {
 	return &Server{
 		cfg:        cfg,
 		jobManager: job.NewManager(),
-		processor:  service.NewProcessor(cfg),
+		processor:  processor.NewProcessor(cfg),
 	}
 }
 

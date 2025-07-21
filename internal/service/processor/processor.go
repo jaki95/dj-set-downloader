@@ -1,4 +1,4 @@
-package service
+package processor
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 
 	"github.com/jaki95/dj-set-downloader/config"
 	"github.com/jaki95/dj-set-downloader/internal/domain"
-	"github.com/jaki95/dj-set-downloader/internal/job"
+	"github.com/jaki95/dj-set-downloader/internal/service/job"
 	"github.com/jaki95/dj-set-downloader/pkg/audio"
 	"github.com/jaki95/dj-set-downloader/pkg/downloader"
 )
