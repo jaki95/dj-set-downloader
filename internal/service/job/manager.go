@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jaki95/dj-set-downloader/internal/domain"
+	"github.com/jaki95/dj-set-downloader/internal/pkg/progress"
 )
 
 // Manager handles job management
@@ -32,6 +33,8 @@ func (m *Manager) CreateJob(tracklist domain.Tracklist) (*Status, context.Contex
 		Status:     StatusPending,
 		Progress:   0,
 		Message:    "Job created",
+		Events:     []progress.Event{},
+		Results:    []string{},
 		StartTime:  time.Now(),
 		Tracklist:  tracklist,
 		cancelFunc: cancel,
@@ -68,6 +71,11 @@ func (m *Manager) UpdateJobStatus(jobID string, status string, results []string,
 	job.Results = results
 	job.Message = message
 
+	// Set progress to 100% for completed jobs
+	if status == StatusCompleted {
+		job.Progress = 100.0
+	}
+
 	// Set end time for terminal states
 	if status == StatusCompleted || status == StatusFailed || status == StatusCancelled {
 		endTime := time.Now()
@@ -78,6 +86,22 @@ func (m *Manager) UpdateJobStatus(jobID string, status string, results []string,
 	if status == StatusFailed {
 		job.Error = message
 	}
+
+	return nil
+}
+
+// UpdateJobProgress updates a job's progress
+func (m *Manager) UpdateJobProgress(jobID string, progress float64, message string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	job, exists := m.jobs[jobID]
+	if !exists {
+		return fmt.Errorf("%w: %s", ErrNotFound, jobID)
+	}
+
+	job.Progress = progress
+	job.Message = message
 
 	return nil
 }

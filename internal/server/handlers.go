@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -35,15 +34,9 @@ func (s *Server) processUrlInBackground(ctx context.Context, jobID string, url s
 
 	// Create temporary directory for this job
 	tempDir := s.createJobTempDir(jobID)
-	defer func() {
-		// Clean up temp directory on exit
-		if err := os.RemoveAll(tempDir); err != nil {
-			slog.Warn("Failed to clean up temp directory", "path", tempDir, "error", err)
-		}
-	}()
 
 	// Update job status to processing
-	if err := s.jobManager.UpdateJobStatus(jobID, job.StatusProcessing, []string{}, ""); err != nil {
+	if err := s.jobManager.UpdateJobStatus(jobID, job.StatusProcessing, []string{}, "Processing started"); err != nil {
 		slog.Warn("Failed to update job status", "error", err)
 	}
 
@@ -66,9 +59,18 @@ func (s *Server) processUrlInBackground(ctx context.Context, jobID string, url s
 		return
 	}
 
+	// Create progress callback for download
+	downloadProgressCallback := func(percent int, message string, data []byte) {
+		// Map download progress to overall job progress (0-25%)
+		overallProgress := float64(percent) * 0.25
+		if err := s.jobManager.UpdateJobProgress(jobID, overallProgress, message); err != nil {
+			slog.Warn("Failed to update download progress", "error", err)
+		}
+	}
+
 	// Download the audio file from the URL to the temp directory
 	slog.Info("Downloading audio file", "url", url)
-	downloadedFile, err := dl.Download(ctx, url, tempDir, nil)
+	downloadedFile, err := dl.Download(ctx, url, tempDir, downloadProgressCallback)
 	if err != nil {
 		slog.Error("Failed to download audio file", "url", url, "error", err)
 		if updateErr := s.jobManager.UpdateJobStatus(jobID, job.StatusFailed, []string{}, err.Error()); updateErr != nil {
@@ -79,8 +81,13 @@ func (s *Server) processUrlInBackground(ctx context.Context, jobID string, url s
 
 	slog.Info("Successfully downloaded audio file", "downloadedFile", downloadedFile)
 
+	// Update progress to processing phase
+	if err := s.jobManager.UpdateJobProgress(jobID, 25.0, "Starting audio processing..."); err != nil {
+		slog.Warn("Failed to update processing progress", "error", err)
+	}
+
 	// Split the audio file
-	results, err := s.process(ctx, downloadedFile, tracklist, req.MaxConcurrentTasks, tempDir, req.FileExtension)
+	results, err := s.process(ctx, downloadedFile, tracklist, req.MaxConcurrentTasks, tempDir, req.FileExtension, jobID)
 	if err != nil {
 		if updateErr := s.jobManager.UpdateJobStatus(jobID, job.StatusFailed, []string{}, err.Error()); updateErr != nil {
 			slog.Warn("Failed to update job status to failed", "error", updateErr)
@@ -89,13 +96,13 @@ func (s *Server) processUrlInBackground(ctx context.Context, jobID string, url s
 	}
 
 	// Update job status to completed
-	if err := s.jobManager.UpdateJobStatus(jobID, job.StatusCompleted, results, ""); err != nil {
+	if err := s.jobManager.UpdateJobStatus(jobID, job.StatusCompleted, results, "Processing completed"); err != nil {
 		slog.Warn("Failed to update job status to completed", "error", err)
 	}
 }
 
 // process handles the splitting of audio files
-func (s *Server) process(ctx context.Context, inputPath string, tracklist domain.Tracklist, maxConcurrentTasks int, tempDir string, requestedExtension string) ([]string, error) {
+func (s *Server) process(ctx context.Context, inputPath string, tracklist domain.Tracklist, maxConcurrentTasks int, tempDir string, requestedExtension string, jobID string) ([]string, error) {
 	results := make([]string, len(tracklist.Tracks))
 	errors := make([]error, len(tracklist.Tracks))
 
@@ -117,6 +124,12 @@ func (s *Server) process(ctx context.Context, inputPath string, tracklist domain
 	// Create a semaphore to limit concurrent tasks
 	semaphore := make(chan struct{}, validatedMaxConcurrentTasks)
 	var wg sync.WaitGroup
+
+	// Track actual number of completed tracks (thread-safe)
+	var completedTracks int64
+	var mu sync.Mutex
+
+	totalTracks := len(tracklist.Tracks)
 
 	for i, track := range tracklist.Tracks {
 		wg.Add(1)
@@ -165,6 +178,21 @@ func (s *Server) process(ctx context.Context, inputPath string, tracklist domain
 
 			slog.Info("Successfully processed track", "track", track.Name)
 			results[i] = outputPath + "." + splitParams.FileExtension
+
+			// Update completed tracks counter (thread-safe)
+			mu.Lock()
+			completedTracks++
+			currentCompleted := completedTracks
+			mu.Unlock()
+
+			// Calculate progress based on actual completed tracks
+			completion := float64(currentCompleted) / float64(totalTracks)
+			overallProgress := 25.0 + (completion * 75.0)
+			progressMessage := fmt.Sprintf("Processed track %d/%d: %s", currentCompleted, totalTracks, track.Name)
+
+			if err := s.jobManager.UpdateJobProgress(jobID, overallProgress, progressMessage); err != nil {
+				slog.Warn("Failed to update processing progress", "error", err)
+			}
 		}(i, track)
 	}
 

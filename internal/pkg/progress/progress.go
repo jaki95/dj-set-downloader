@@ -146,13 +146,18 @@ func (pt *ProgressTracker) GetCurrentState() Event {
 	pt.mu.RLock()
 	defer pt.mu.RUnlock()
 
+	var errorMsg string
+	if pt.error != nil {
+		errorMsg = pt.error.Error()
+	}
+
 	return Event{
 		Stage:        pt.stage,
 		Progress:     pt.progress,
 		Message:      pt.message,
 		Timestamp:    time.Now(),
 		TrackDetails: pt.trackDetails,
-		Error:        pt.error.Error(),
+		Error:        errorMsg,
 	}
 }
 
