@@ -19,7 +19,6 @@ const (
 	JobCleanupGracePeriod = 2 * time.Hour
 )
 
-
 // SanitizeFilename sanitizes a filename by removing invalid characters
 func SanitizeFilename(name string) string {
 	// Replace invalid characters with underscores
@@ -89,13 +88,13 @@ func (s *Server) scheduleJobCleanup(jobID string, tempDir string) {
 	go func() {
 		// Wait for the grace period to allow users to download files
 		time.Sleep(JobCleanupGracePeriod)
-		
+
 		// Clean up the temporary directory
 		if err := os.RemoveAll(tempDir); err != nil {
-			slog.Error("Failed to clean up job temporary directory", 
+			slog.Error("Failed to clean up job temporary directory",
 				"jobID", jobID, "tempDir", tempDir, "error", err)
 		} else {
-			slog.Info("Successfully cleaned up job temporary directory", 
+			slog.Info("Successfully cleaned up job temporary directory",
 				"jobID", jobID, "tempDir", tempDir, "gracePeriod", JobCleanupGracePeriod)
 		}
 	}()
@@ -104,10 +103,10 @@ func (s *Server) scheduleJobCleanup(jobID string, tempDir string) {
 // cleanupJobTempDir immediately cleans up a job's temporary directory (used for failed jobs)
 func (s *Server) cleanupJobTempDir(jobID string, tempDir string) {
 	if err := os.RemoveAll(tempDir); err != nil {
-		slog.Error("Failed to clean up failed job temporary directory", 
+		slog.Error("Failed to clean up failed job temporary directory",
 			"jobID", jobID, "tempDir", tempDir, "error", err)
 	} else {
-		slog.Debug("Cleaned up failed job temporary directory", 
+		slog.Debug("Cleaned up failed job temporary directory",
 			"jobID", jobID, "tempDir", tempDir)
 	}
 }
