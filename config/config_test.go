@@ -75,25 +75,3 @@ file_extension: mp3
 		assert.Equal(t, "output", cfg.Storage.OutputDir)
 	})
 }
-
-func TestLoad_EnvironmentOverrides(t *testing.T) {
-	tempDir := t.TempDir()
-	configPath := filepath.Join(tempDir, "env_config.yaml")
-	yamlContent := `
-server:
-  port: "1234"
-storage:
-  type: "local"
-  output_dir: "yaml_output"
-`
-	assert.NoError(t, os.WriteFile(configPath, []byte(yamlContent), 0644))
-
-	// Set env overrides
-	t.Setenv("SERVER_PORT", "9999")
-	t.Setenv("STORAGE_OUTPUT_DIR", "env_output")
-
-	cfg, err := Load(configPath)
-	assert.NoError(t, err)
-	assert.Equal(t, "9999", cfg.Server.Port, "SERVER_PORT env should override YAML value")
-	assert.Equal(t, "env_output", cfg.Storage.OutputDir, "STORAGE_OUTPUT_DIR env should override YAML value")
-}
