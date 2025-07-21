@@ -16,22 +16,14 @@ import (
 	"github.com/jaki95/dj-set-downloader/pkg/downloader"
 )
 
-// Processor performs the heavy lifting of downloading the DJ set and splitting it into tracks.
-// It is intentionally separated from the HTTP layer so it can be reused from CLI or tests.
+// Processor performs the downloading the DJ set and splitting it into tracks.
 //
 // Progress updates are pushed to the caller via the provided callback.
 // For percentage-to-stage mapping, see the constants in the job package.
 //
-// The implementation has been migrated from internal/server to decouple concerns.
-// No network / HTTP specific code should live here.
-//
-// All paths returned are absolute filesystem paths.
-//
-// NOTE: The Processor implementation is not goroutine-safe. Create a new instance per request if you
-// plan to call it concurrently.
-//
-// Future improvements: make the downloader and audio engine pluggable via interfaces.
-
+// Future improvements:
+// 1. make the downloader and audio engine pluggable via interfaces.
+// 2. make processor goroutine safe
 type Processor struct {
 	cfg *config.Config
 }
