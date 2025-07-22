@@ -80,7 +80,7 @@ const (
 // Constants for configuration
 const (
 	DefaultMaxConcurrentTasks = 4
-	MaxAllowedConcurrentTasks = 100 // Safety limit to prevent excessive memory allocation
+	MaxAllowedConcurrentTasks = 10
 )
 
 // ValidateMaxConcurrentTasks validates and sanitizes the maxConcurrentTasks value

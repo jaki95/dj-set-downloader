@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/jaki95/dj-set-downloader/config"
+	_ "github.com/jaki95/dj-set-downloader/docs"
 	"github.com/jaki95/dj-set-downloader/internal/server"
 )
 

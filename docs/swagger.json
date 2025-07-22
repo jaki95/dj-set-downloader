@@ -1,0 +1,611 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "contact": {}
+    },
+    "paths": {
+        "/api/jobs": {
+            "get": {
+                "description": "Retrieves a paginated list of all processing jobs",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jobs"
+                ],
+                "summary": "List all jobs",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 10,
+                        "description": "Number of jobs per page (max 100)",
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Jobs retrieved successfully",
+                        "schema": {
+                            "$ref": "#/definitions/job.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/jobs/{id}": {
+            "get": {
+                "description": "Retrieves the current status and progress of a processing job by ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jobs"
+                ],
+                "summary": "Get job status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Job status retrieved successfully",
+                        "schema": {
+                            "$ref": "#/definitions/job.Status"
+                        }
+                    },
+                    "404": {
+                        "description": "Job not found",
+                        "schema": {
+                            "$ref": "#/definitions/server.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/jobs/{id}/cancel": {
+            "post": {
+                "description": "Cancels a running or pending processing job by ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jobs"
+                ],
+                "summary": "Cancel a job",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Job cancelled successfully",
+                        "schema": {
+                            "$ref": "#/definitions/server.CancelResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Job cannot be cancelled (invalid state)",
+                        "schema": {
+                            "$ref": "#/definitions/server.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Job not found",
+                        "schema": {
+                            "$ref": "#/definitions/server.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/server.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/jobs/{id}/download": {
+            "get": {
+                "description": "Downloads all processed tracks for a completed job as a ZIP archive",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/zip"
+                ],
+                "tags": [
+                    "Downloads"
+                ],
+                "summary": "Download all tracks as ZIP",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Job is not completed yet",
+                        "schema": {
+                            "$ref": "#/definitions/server.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Job not found or no tracks available",
+                        "schema": {
+                            "$ref": "#/definitions/server.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error during ZIP creation",
+                        "schema": {
+                            "$ref": "#/definitions/server.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/jobs/{id}/tracks": {
+            "get": {
+                "description": "Retrieves metadata and download information for all tracks in a completed job",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Downloads"
+                ],
+                "summary": "Get tracks information",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Tracks information retrieved successfully",
+                        "schema": {
+                            "$ref": "#/definitions/job.TracksInfoResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Job is not completed yet",
+                        "schema": {
+                            "$ref": "#/definitions/server.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Job not found",
+                        "schema": {
+                            "$ref": "#/definitions/server.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/jobs/{id}/tracks/{trackNumber}/download": {
+            "get": {
+                "description": "Downloads a specific processed track by job ID and track number",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "audio/mpeg",
+                    "audio/flac",
+                    "audio/wav"
+                ],
+                "tags": [
+                    "Downloads"
+                ],
+                "summary": "Download a single track",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Track number (1-based)",
+                        "name": "trackNumber",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid track number or job not completed",
+                        "schema": {
+                            "$ref": "#/definitions/server.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Job or track not found",
+                        "schema": {
+                            "$ref": "#/definitions/server.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/process": {
+            "post": {
+                "description": "Starts processing a DJ set from a given URL using the provided tracklist. Returns a job ID for tracking progress.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Process"
+                ],
+                "summary": "Process a DJ set URL with tracklist",
+                "parameters": [
+                    {
+                        "description": "Processing request with URL and tracklist",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/job.Request"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Processing started successfully",
+                        "schema": {
+                            "$ref": "#/definitions/server.ProcessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request or tracklist",
+                        "schema": {
+                            "$ref": "#/definitions/server.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "description": "Returns the health status of the API",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Health check",
+                "responses": {
+                    "200": {
+                        "description": "Service is healthy",
+                        "schema": {
+                            "$ref": "#/definitions/server.HealthResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "domain.Track": {
+            "type": "object",
+            "properties": {
+                "artist": {
+                    "type": "string"
+                },
+                "available": {
+                    "type": "boolean"
+                },
+                "download_url": {
+                    "type": "string"
+                },
+                "end_time": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "start_time": {
+                    "type": "string"
+                },
+                "track_number": {
+                    "type": "integer"
+                }
+            }
+        },
+        "domain.Tracklist": {
+            "type": "object",
+            "properties": {
+                "artist": {
+                    "type": "string"
+                },
+                "genre": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "tracks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domain.Track"
+                    }
+                },
+                "year": {
+                    "type": "integer"
+                }
+            }
+        },
+        "job.Request": {
+            "type": "object",
+            "required": [
+                "tracklist",
+                "url"
+            ],
+            "properties": {
+                "file_extension": {
+                    "type": "string"
+                },
+                "max_concurrent_tasks": {
+                    "type": "integer"
+                },
+                "tracklist": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "job.Response": {
+            "type": "object",
+            "properties": {
+                "jobs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/job.Status"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total_jobs": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "job.Status": {
+            "type": "object",
+            "properties": {
+                "download_all_url": {
+                    "description": "Additional fields from main branch",
+                    "type": "string"
+                },
+                "end_time": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/progress.Event"
+                    }
+                },
+                "id": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "progress": {
+                    "type": "number"
+                },
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "start_time": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "total_tracks": {
+                    "type": "integer"
+                },
+                "tracklist": {
+                    "$ref": "#/definitions/domain.Tracklist"
+                }
+            }
+        },
+        "job.TracksInfoResponse": {
+            "type": "object",
+            "properties": {
+                "download_all_url": {
+                    "type": "string"
+                },
+                "job_id": {
+                    "type": "string"
+                },
+                "total_tracks": {
+                    "type": "integer"
+                },
+                "tracks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domain.Track"
+                    }
+                }
+            }
+        },
+        "progress.Event": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "error": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "progress": {
+                    "type": "number"
+                },
+                "stage": {
+                    "$ref": "#/definitions/progress.Stage"
+                },
+                "timestamp": {
+                    "type": "string"
+                },
+                "trackDetails": {
+                    "$ref": "#/definitions/progress.TrackDetails"
+                }
+            }
+        },
+        "progress.Stage": {
+            "type": "string",
+            "enum": [
+                "initializing",
+                "importing",
+                "downloading",
+                "processing",
+                "complete",
+                "error"
+            ],
+            "x-enum-varnames": [
+                "StageInitializing",
+                "StageImporting",
+                "StageDownloading",
+                "StageProcessing",
+                "StageComplete",
+                "StageError"
+            ]
+        },
+        "progress.TrackDetails": {
+            "type": "object",
+            "properties": {
+                "currentTrack": {
+                    "type": "string"
+                },
+                "processedTracks": {
+                    "type": "integer"
+                },
+                "totalTracks": {
+                    "type": "integer"
+                },
+                "trackNumber": {
+                    "type": "integer"
+                }
+            }
+        },
+        "server.CancelResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "server.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "server.HealthResponse": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "server.ProcessResponse": {
+            "type": "object",
+            "properties": {
+                "jobId": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        }
+    }
+}

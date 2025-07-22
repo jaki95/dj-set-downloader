@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -11,53 +10,17 @@ import (
 	"github.com/jaki95/dj-set-downloader/internal/service/job"
 )
 
-// processWithUrl handles the processing of a URL with a tracklist
-func (s *Server) processWithUrl(c *gin.Context) {
-	var req job.Request
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, gin.H{"error": fmt.Sprintf("invalid request: %v", err)})
-		return
-	}
-
-	var tracklist domain.Tracklist
-	if err := json.Unmarshal([]byte(req.Tracklist), &tracklist); err != nil {
-		c.JSON(400, gin.H{"error": fmt.Sprintf("%v: %v", job.ErrInvalidTracklist, err)})
-		return
-	}
-
-	if tracklist.Artist == "" || tracklist.Name == "" {
-		c.JSON(400, gin.H{"error": fmt.Sprintf("%v: artist and name are required", job.ErrInvalidTracklist)})
-		return
-	}
-
-	if len(tracklist.Tracks) == 0 {
-		c.JSON(400, gin.H{"error": fmt.Sprintf("%v: at least one track is required", job.ErrInvalidTracklist)})
-		return
-	}
-
-	const MaxAllowedTracks = 100 // Security: Limit track count to prevent memory exhaustion attacks via large slice allocations
-	if len(tracklist.Tracks) > MaxAllowedTracks {
-		c.JSON(400, gin.H{"error": fmt.Sprintf("%v: maximum %d tracks allowed", job.ErrInvalidTracklist, MaxAllowedTracks)})
-		return
-	}
-
-	if req.FileExtension == "" {
-		req.FileExtension = "mp3"
-	}
-
-	// Validate and sanitize maxConcurrentTasks to prevent excessive memory allocation
-	req.MaxConcurrentTasks = job.ValidateMaxConcurrentTasks(req.MaxConcurrentTasks)
-
-	jobStatus, ctx := s.jobManager.CreateJob(tracklist)
-	go s.processUrlInBackground(ctx, jobStatus.ID, req.URL, tracklist, req)
-
-	c.JSON(202, gin.H{
-		"message": "Processing started",
-		"jobId":   jobStatus.ID,
-	})
-}
-
 // getJobStatus handles retrieving the status of a job
+//
+//	@Summary		Get job status
+//	@Description	Retrieves the current status and progress of a processing job by ID
+//	@Tags			Jobs
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path		string			true	"Job ID"
+//	@Success		200	{object}	job.Status		"Job status retrieved successfully"
+//	@Failure		404	{object}	ErrorResponse	"Job not found"
+//	@Router			/api/jobs/{id} [get]
 func (s *Server) getJobStatus(c *gin.Context) {
 	jobID := c.Param("id")
 
@@ -111,6 +74,18 @@ func (s *Server) getJobStatus(c *gin.Context) {
 }
 
 // cancelJob handles cancelling a job
+//
+//	@Summary		Cancel a job
+//	@Description	Cancels a running or pending processing job by ID
+//	@Tags			Jobs
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path		string			true	"Job ID"
+//	@Success		200	{object}	CancelResponse	"Job cancelled successfully"
+//	@Failure		404	{object}	ErrorResponse	"Job not found"
+//	@Failure		400	{object}	ErrorResponse	"Job cannot be cancelled (invalid state)"
+//	@Failure		500	{object}	ErrorResponse	"Internal server error"
+//	@Router			/api/jobs/{id}/cancel [post]
 func (s *Server) cancelJob(c *gin.Context) {
 	jobID := c.Param("id")
 
@@ -126,10 +101,20 @@ func (s *Server) cancelJob(c *gin.Context) {
 		return
 	}
 
-	c.JSON(200, gin.H{"message": "Job cancelled"})
+	c.JSON(200, CancelResponse{Message: "Job cancelled"})
 }
 
 // listJobs handles listing all jobs
+//
+//	@Summary		List all jobs
+//	@Description	Retrieves a paginated list of all processing jobs
+//	@Tags			Jobs
+//	@Accept			json
+//	@Produce		json
+//	@Param			page		query		int				false	"Page number"						default(1)
+//	@Param			pageSize	query		int				false	"Number of jobs per page (max 100)"	default(10)
+//	@Success		200			{object}	job.Response	"Jobs retrieved successfully"
+//	@Router			/api/jobs [get]
 func (s *Server) listJobs(c *gin.Context) {
 	page := 1
 	pageSize := job.DefaultPageSize

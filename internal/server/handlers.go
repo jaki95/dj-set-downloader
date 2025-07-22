@@ -2,17 +2,89 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"path/filepath"
 	"strings"
 	"sync"
 
+	"github.com/gin-gonic/gin"
 	"github.com/jaki95/dj-set-downloader/internal/domain"
 	"github.com/jaki95/dj-set-downloader/internal/service/job"
 	"github.com/jaki95/dj-set-downloader/pkg/audio"
 	"github.com/jaki95/dj-set-downloader/pkg/downloader"
 )
+
+type ProcessResponse struct {
+	Message string `json:"message"`
+	JobID   string `json:"jobId"`
+}
+
+type CancelResponse struct {
+	Message string `json:"message"`
+}
+
+type ErrorResponse struct {
+	Error string `json:"error"`
+}
+
+// processWithUrl handles the processing of a URL with a tracklist
+//
+//	@Summary		Process a DJ set URL with tracklist
+//	@Description	Starts processing a DJ set from a given URL using the provided tracklist. Returns a job ID for tracking progress.
+//	@Tags			Process
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		job.Request		true	"Processing request with URL and tracklist"
+//	@Success		202		{object}	ProcessResponse	"Processing started successfully"
+//	@Failure		400		{object}	ErrorResponse	"Invalid request or tracklist"
+//	@Router			/api/process [post]
+func (s *Server) processWithUrl(c *gin.Context) {
+	var req job.Request
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, gin.H{"error": fmt.Sprintf("invalid request: %v", err)})
+		return
+	}
+
+	var tracklist domain.Tracklist
+	if err := json.Unmarshal([]byte(req.Tracklist), &tracklist); err != nil {
+		c.JSON(400, gin.H{"error": fmt.Sprintf("%v: %v", job.ErrInvalidTracklist, err)})
+		return
+	}
+
+	if tracklist.Artist == "" || tracklist.Name == "" {
+		c.JSON(400, gin.H{"error": fmt.Sprintf("%v: artist and name are required", job.ErrInvalidTracklist)})
+		return
+	}
+
+	if len(tracklist.Tracks) == 0 {
+		c.JSON(400, gin.H{"error": fmt.Sprintf("%v: at least one track is required", job.ErrInvalidTracklist)})
+		return
+	}
+
+	// Limit track count to prevent memory exhaustion attacks via large slice allocations
+	const MaxAllowedTracks = 100
+	if len(tracklist.Tracks) > MaxAllowedTracks {
+		c.JSON(400, gin.H{"error": fmt.Sprintf("%v: maximum %d tracks allowed", job.ErrInvalidTracklist, MaxAllowedTracks)})
+		return
+	}
+
+	if req.FileExtension == "" {
+		req.FileExtension = "mp3"
+	}
+
+	// Validate and sanitize maxConcurrentTasks to prevent excessive memory allocation
+	req.MaxConcurrentTasks = job.ValidateMaxConcurrentTasks(req.MaxConcurrentTasks)
+
+	jobStatus, ctx := s.jobManager.CreateJob(tracklist)
+	go s.processUrlInBackground(ctx, jobStatus.ID, req.URL, tracklist, req)
+
+	c.JSON(202, ProcessResponse{
+		Message: "Processing started",
+		JobID:   jobStatus.ID,
+	})
+}
 
 // processUrlInBackground processes a URL in the background
 func (s *Server) processUrlInBackground(ctx context.Context, jobID string, url string, tracklist domain.Tracklist, req job.Request) {
