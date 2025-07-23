@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -47,11 +46,7 @@ func (s *Server) processWithUrl(c *gin.Context) {
 		return
 	}
 
-	var tracklist domain.Tracklist
-	if err := json.Unmarshal([]byte(req.Tracklist), &tracklist); err != nil {
-		c.JSON(400, gin.H{"error": fmt.Sprintf("%v: %v", job.ErrInvalidTracklist, err)})
-		return
-	}
+	tracklist := req.Tracklist
 
 	if tracklist.Artist == "" || tracklist.Name == "" {
 		c.JSON(400, gin.H{"error": fmt.Sprintf("%v: artist and name are required", job.ErrInvalidTracklist)})

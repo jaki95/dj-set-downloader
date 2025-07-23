@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jaki95/dj-set-downloader/config"
+	"github.com/jaki95/dj-set-downloader/internal/domain"
 	"github.com/jaki95/dj-set-downloader/internal/service/job"
 )
 
@@ -67,8 +68,18 @@ func TestProcessRequestValidation(t *testing.T) {
 		{
 			name: "valid request",
 			requestBody: job.Request{
-				URL:       "https://example.com/set.mp3",
-				Tracklist: `{"artist":"Test Artist", "name":"Test Mix", "tracks":[{"name":"Track 1","startTime":"00:00","endTime":"03:00"}]}`,
+				URL: "https://example.com/set.mp3",
+				Tracklist: domain.Tracklist{
+					Artist: "Test Artist",
+					Name:   "Test Mix",
+					Tracks: []*domain.Track{
+						{
+							Name:      "Track 1",
+							StartTime: "00:00",
+							EndTime:   "03:00",
+						},
+					},
+				},
 			},
 			expectedStatus: http.StatusAccepted,
 		},

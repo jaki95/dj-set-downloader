@@ -30,10 +30,10 @@ type Status struct {
 
 // Request represents the request body for processing a URL
 type Request struct {
-	URL                string `json:"url" binding:"required"`
-	Tracklist          string `json:"tracklist" binding:"required"`
-	FileExtension      string `json:"file_extension"`
-	MaxConcurrentTasks int    `json:"max_concurrent_tasks"`
+	URL                string           `json:"url" binding:"required"`
+	Tracklist          domain.Tracklist `json:"tracklist" binding:"required"`
+	FileExtension      string           `json:"file_extension"`
+	MaxConcurrentTasks int              `json:"max_concurrent_tasks"`
 }
 
 // Response represents the response for job status
