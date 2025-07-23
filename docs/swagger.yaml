@@ -1,0 +1,415 @@
+definitions:
+  domain.Track:
+    properties:
+      artist:
+        type: string
+      available:
+        type: boolean
+      download_url:
+        type: string
+      end_time:
+        type: string
+      name:
+        type: string
+      size_bytes:
+        type: integer
+      start_time:
+        type: string
+      track_number:
+        type: integer
+    type: object
+  domain.Tracklist:
+    properties:
+      artist:
+        type: string
+      genre:
+        type: string
+      name:
+        type: string
+      tracks:
+        items:
+          $ref: '#/definitions/domain.Track'
+        type: array
+      year:
+        type: integer
+    type: object
+  job.Request:
+    properties:
+      file_extension:
+        type: string
+      max_concurrent_tasks:
+        type: integer
+      tracklist:
+        $ref: '#/definitions/domain.Tracklist'
+      url:
+        type: string
+    required:
+    - tracklist
+    - url
+    type: object
+  job.Response:
+    properties:
+      jobs:
+        items:
+          $ref: '#/definitions/job.Status'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total_jobs:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  job.Status:
+    properties:
+      download_all_url:
+        description: Additional fields from main branch
+        type: string
+      end_time:
+        type: string
+      error:
+        type: string
+      events:
+        items:
+          $ref: '#/definitions/progress.Event'
+        type: array
+      id:
+        type: string
+      message:
+        type: string
+      progress:
+        type: number
+      results:
+        items:
+          type: string
+        type: array
+      start_time:
+        type: string
+      status:
+        type: string
+      total_tracks:
+        type: integer
+      tracklist:
+        $ref: '#/definitions/domain.Tracklist'
+    type: object
+  job.TracksInfoResponse:
+    properties:
+      download_all_url:
+        type: string
+      job_id:
+        type: string
+      total_tracks:
+        type: integer
+      tracks:
+        items:
+          $ref: '#/definitions/domain.Track'
+        type: array
+    type: object
+  progress.Event:
+    properties:
+      data:
+        items:
+          type: integer
+        type: array
+      error:
+        type: string
+      message:
+        type: string
+      progress:
+        type: number
+      stage:
+        $ref: '#/definitions/progress.Stage'
+      timestamp:
+        type: string
+      trackDetails:
+        $ref: '#/definitions/progress.TrackDetails'
+    type: object
+  progress.Stage:
+    enum:
+    - initializing
+    - importing
+    - downloading
+    - processing
+    - complete
+    - error
+    type: string
+    x-enum-varnames:
+    - StageInitializing
+    - StageImporting
+    - StageDownloading
+    - StageProcessing
+    - StageComplete
+    - StageError
+  progress.TrackDetails:
+    properties:
+      currentTrack:
+        type: string
+      processedTracks:
+        type: integer
+      totalTracks:
+        type: integer
+      trackNumber:
+        type: integer
+    type: object
+  server.CancelResponse:
+    properties:
+      message:
+        type: string
+    type: object
+  server.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  server.HealthResponse:
+    properties:
+      status:
+        type: string
+    type: object
+  server.ProcessResponse:
+    properties:
+      jobId:
+        type: string
+      message:
+        type: string
+    type: object
+host: localhost:8000
+info:
+  contact: {}
+  description: A REST API for downloading and processing DJ sets, splitting them into
+    individual tracks.
+  title: DJ Set Downloader API
+  version: 1.0.0
+paths:
+  /api/jobs:
+    get:
+      consumes:
+      - application/json
+      description: Retrieves a paginated list of all processing jobs
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: Number of jobs per page (max 100)
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Jobs retrieved successfully
+          schema:
+            $ref: '#/definitions/job.Response'
+      summary: List all jobs
+      tags:
+      - Jobs
+  /api/jobs/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Retrieves the current status and progress of a processing job by
+        ID
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Job status retrieved successfully
+          schema:
+            $ref: '#/definitions/job.Status'
+        "404":
+          description: Job not found
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+      summary: Get job status
+      tags:
+      - Jobs
+  /api/jobs/{id}/cancel:
+    post:
+      consumes:
+      - application/json
+      description: Cancels a running or pending processing job by ID
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Job cancelled successfully
+          schema:
+            $ref: '#/definitions/server.CancelResponse'
+        "400":
+          description: Job cannot be cancelled (invalid state)
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+        "404":
+          description: Job not found
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+      summary: Cancel a job
+      tags:
+      - Jobs
+  /api/jobs/{id}/download:
+    get:
+      consumes:
+      - application/json
+      description: Downloads all processed tracks for a completed job as a ZIP archive
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/zip
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Job is not completed yet
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+        "404":
+          description: Job not found or no tracks available
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+        "500":
+          description: Server error during ZIP creation
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+      summary: Download all tracks as ZIP
+      tags:
+      - Downloads
+  /api/jobs/{id}/tracks:
+    get:
+      consumes:
+      - application/json
+      description: Retrieves metadata and download information for all tracks in a
+        completed job
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Tracks information retrieved successfully
+          schema:
+            $ref: '#/definitions/job.TracksInfoResponse'
+        "400":
+          description: Job is not completed yet
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+        "404":
+          description: Job not found
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+      summary: Get tracks information
+      tags:
+      - Downloads
+  /api/jobs/{id}/tracks/{trackNumber}/download:
+    get:
+      consumes:
+      - application/json
+      description: Downloads a specific processed track by job ID and track number
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Track number (1-based)
+        in: path
+        name: trackNumber
+        required: true
+        type: integer
+      produces:
+      - audio/mpeg
+      - audio/flac
+      - audio/wav
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Invalid track number or job not completed
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+        "404":
+          description: Job or track not found
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+      summary: Download a single track
+      tags:
+      - Downloads
+  /api/process:
+    post:
+      consumes:
+      - application/json
+      description: Starts processing a DJ set from a given URL using the provided
+        tracklist. Returns a job ID for tracking progress.
+      parameters:
+      - description: Processing request with URL and tracklist
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/job.Request'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Processing started successfully
+          schema:
+            $ref: '#/definitions/server.ProcessResponse'
+        "400":
+          description: Invalid request or tracklist
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+      summary: Process a DJ set URL with tracklist
+      tags:
+      - Process
+  /health:
+    get:
+      consumes:
+      - application/json
+      description: Returns the health status of the API
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Service is healthy
+          schema:
+            $ref: '#/definitions/server.HealthResponse'
+      summary: Health check
+      tags:
+      - System
+schemes:
+- http
+- https
+swagger: "2.0"

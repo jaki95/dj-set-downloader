@@ -12,6 +12,8 @@ import (
 	"github.com/jaki95/dj-set-downloader/internal/service/job"
 	"github.com/jaki95/dj-set-downloader/internal/service/processor"
 	"github.com/jaki95/dj-set-downloader/pkg/audio"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 // Server handles HTTP requests for the DJ set processor
@@ -50,10 +52,11 @@ func (s *Server) Start() error {
 
 // setupRoutes configures the HTTP routes
 func (s *Server) setupRoutes(router *gin.Engine) {
+	// Swagger documentation
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
 	// Health check
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
-	})
+	router.GET("/health", s.healthCheck)
 
 	// API routes
 	api := router.Group("/api")
@@ -71,4 +74,21 @@ func (s *Server) setupRoutes(router *gin.Engine) {
 		api.GET("/jobs/:id/tracks", s.getTracksInfo)
 		api.GET("/jobs/:id/tracks/:trackNumber/download", s.downloadTrack)
 	}
+}
+
+type HealthResponse struct {
+	Status string `json:"status"`
+}
+
+// healthCheck handles the health check endpoint
+//
+//	@Summary		Health check
+//	@Description	Returns the health status of the API
+//	@Tags			System
+//	@Accept			json
+//	@Produce		json
+//	@Success		200	{object}	HealthResponse	"Service is healthy"
+//	@Router			/health [get]
+func (s *Server) healthCheck(c *gin.Context) {
+	c.JSON(http.StatusOK, HealthResponse{Status: "ok"})
 }

@@ -1,3 +1,9 @@
+// Package main is the main package for the DJ Set Processor HTTP server.
+// @title           DJ Set Downloader API
+// @version         1.0.0
+// @description     A REST API for downloading and processing DJ sets, splitting them into individual tracks.
+// @host      localhost:8000
+// @schemes   http https
 package main
 
 import (
@@ -6,6 +12,7 @@ import (
 	"os"
 
 	"github.com/jaki95/dj-set-downloader/config"
+	_ "github.com/jaki95/dj-set-downloader/docs"
 	"github.com/jaki95/dj-set-downloader/internal/server"
 )
 
