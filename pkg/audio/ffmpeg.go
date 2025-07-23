@@ -168,12 +168,13 @@ func (f *ffmpeg) sanitizePath(path string) (string, error) {
 func (f *ffmpeg) createTempFile(extension string) (string, error) {
 	const prefix = "audio_segment"
 
-	// Validate the extension
-	if _, ok := SupportedExtensions[strings.ToLower(extension)]; !ok {
+	// Validate and normalise the extension
+	normalisedExt := strings.ToLower(extension)
+	if _, ok := SupportedExtensions[normalisedExt]; !ok {
 		return "", fmt.Errorf("%w: invalid file extension %s", ErrInvalidExtension, extension)
 	}
 
-	tempFile, err := os.CreateTemp("", prefix+"_*."+extension)
+	tempFile, err := os.CreateTemp("", prefix+"_*."+normalisedExt)
 	if err != nil {
 		return "", fmt.Errorf("failed to create temporary file: %w", err)
 	}
