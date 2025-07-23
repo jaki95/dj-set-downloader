@@ -114,6 +114,9 @@ func (s *Server) process(ctx context.Context, inputPath string, tracklist domain
 	results := make([]string, len(tracklist.Tracks))
 	errors := make([]error, len(tracklist.Tracks))
 
+	// Validate and sanitize maxConcurrentTasks to prevent excessive memory allocation
+	maxConcurrentTasks = job.ValidateMaxConcurrentTasks(maxConcurrentTasks)
+
 	// Validate the requested file extension
 	if requestedExtension != "" {
 		if _, ok := audio.SupportedExtensions[requestedExtension]; !ok {
