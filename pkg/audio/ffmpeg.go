@@ -169,7 +169,7 @@ func (f *ffmpeg) createTempFile(extension string) (string, error) {
 	const prefix = "audio_segment"
 
 	// Validate the extension
-	if _, ok := SupportedExtensions[extension]; !ok {
+	if _, ok := SupportedExtensions[strings.ToLower(extension)]; !ok {
 		return "", fmt.Errorf("%w: invalid file extension %s", ErrInvalidExtension, extension)
 	}
 
