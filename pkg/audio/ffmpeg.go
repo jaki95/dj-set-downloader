@@ -15,7 +15,7 @@ import (
 
 // Supported audio file extensions and their corresponding FFmpeg codecs and formats
 var (
-	supportedExtensions = map[string]struct {
+	SupportedExtensions = map[string]struct {
 		codec  string
 		format string
 	}{
@@ -169,7 +169,7 @@ func (f *ffmpeg) createTempFile(extension string) (string, error) {
 	const prefix = "audio_segment"
 
 	// Validate the extension
-	if _, ok := supportedExtensions[extension]; !ok {
+	if _, ok := SupportedExtensions[extension]; !ok {
 		return "", fmt.Errorf("%w: invalid file extension %s", ErrInvalidExtension, extension)
 	}
 
@@ -187,7 +187,7 @@ func (f *ffmpeg) Split(ctx context.Context, opts SplitParams) error {
 		return fmt.Errorf("track splitting failed: %w", err)
 	}
 
-	if _, ok := supportedExtensions[opts.FileExtension]; !ok {
+	if _, ok := SupportedExtensions[opts.FileExtension]; !ok {
 		return fmt.Errorf("%w: %s", ErrInvalidExtension, opts.FileExtension)
 	}
 
@@ -259,7 +259,7 @@ func (f *ffmpeg) extractAudio(ctx context.Context, inputPath string, startSecond
 		ext = ext[1:] // Remove the leading dot
 	}
 
-	codecInfo, ok := supportedExtensions[strings.ToLower(ext)]
+	codecInfo, ok := SupportedExtensions[strings.ToLower(ext)]
 	if !ok {
 		return fmt.Errorf("%w: %s", ErrInvalidExtension, ext)
 	}
@@ -309,7 +309,7 @@ func (f *ffmpeg) addMetadataAndCover(ctx context.Context, inputPath, outputPath 
 		ext = ext[1:] // Remove the leading dot
 	}
 
-	codecInfo, ok := supportedExtensions[strings.ToLower(ext)]
+	codecInfo, ok := SupportedExtensions[strings.ToLower(ext)]
 	if !ok {
 		return fmt.Errorf("%w: %s", ErrInvalidExtension, ext)
 	}

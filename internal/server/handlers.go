@@ -130,7 +130,7 @@ func (s *Server) process(ctx context.Context, inputPath string, tracklist domain
 	}
 
 	// Create a semaphore to limit concurrent tasks
-	semaphore := make(chan struct{}, validatedMaxConcurrentTasks)
+	semaphore := make(chan struct{}, maxConcurrentTasks)
 	var wg sync.WaitGroup
 
 	// Track actual number of completed tracks (thread-safe)
