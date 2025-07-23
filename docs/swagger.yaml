@@ -175,10 +175,11 @@ definitions:
       message:
         type: string
     type: object
-host: localhost:8080
+host: localhost:8000
 info:
   contact: {}
-  description: A REST API for downloading and processing DJ sets from various sources
+  description: A REST API for downloading and processing DJ sets, splitting them into
+    individual tracks.
   title: DJ Set Downloader API
   version: 1.0.0
 paths:

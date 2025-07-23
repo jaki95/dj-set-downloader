@@ -624,11 +624,11 @@ const docTemplate = `{
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0.0",
-	Host:             "localhost:8080",
+	Host:             "localhost:8000",
 	BasePath:         "",
 	Schemes:          []string{"http", "https"},
 	Title:            "DJ Set Downloader API",
-	Description:      "A REST API for downloading and processing DJ sets from various sources",
+	Description:      "A REST API for downloading and processing DJ sets, splitting them into individual tracks.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

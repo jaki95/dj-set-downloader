@@ -5,12 +5,12 @@
     ],
     "swagger": "2.0",
     "info": {
-        "description": "A REST API for downloading and processing DJ sets from various sources",
+        "description": "A REST API for downloading and processing DJ sets, splitting them into individual tracks.",
         "title": "DJ Set Downloader API",
         "contact": {},
         "version": "1.0.0"
     },
-    "host": "localhost:8080",
+    "host": "localhost:8000",
     "paths": {
         "/api/jobs": {
             "get": {
