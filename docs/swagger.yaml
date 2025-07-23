@@ -40,7 +40,7 @@ definitions:
       max_concurrent_tasks:
         type: integer
       tracklist:
-        type: string
+        $ref: '#/definitions/domain.Tracklist'
       url:
         type: string
     required:
@@ -175,8 +175,12 @@ definitions:
       message:
         type: string
     type: object
+host: localhost:8080
 info:
   contact: {}
+  description: A REST API for downloading and processing DJ sets from various sources
+  title: DJ Set Downloader API
+  version: 1.0.0
 paths:
   /api/jobs:
     get:
@@ -404,4 +408,7 @@ paths:
       summary: Health check
       tags:
       - System
+schemes:
+- http
+- https
 swagger: "2.0"

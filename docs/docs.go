@@ -420,7 +420,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "tracklist": {
-                    "type": "string"
+                    "$ref": "#/definitions/domain.Tracklist"
                 },
                 "url": {
                     "type": "string"
@@ -623,12 +623,12 @@ const docTemplate = `{
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "",
-	Host:             "",
+	Version:          "1.0.0",
+	Host:             "localhost:8080",
 	BasePath:         "",
-	Schemes:          []string{},
-	Title:            "",
-	Description:      "",
+	Schemes:          []string{"http", "https"},
+	Title:            "DJ Set Downloader API",
+	Description:      "A REST API for downloading and processing DJ sets from various sources",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

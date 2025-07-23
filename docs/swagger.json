@@ -1,8 +1,16 @@
 {
+    "schemes": [
+        "http",
+        "https"
+    ],
     "swagger": "2.0",
     "info": {
-        "contact": {}
+        "description": "A REST API for downloading and processing DJ sets from various sources",
+        "title": "DJ Set Downloader API",
+        "contact": {},
+        "version": "1.0.0"
     },
+    "host": "localhost:8080",
     "paths": {
         "/api/jobs": {
             "get": {
@@ -409,7 +417,7 @@
                     "type": "integer"
                 },
                 "tracklist": {
-                    "type": "string"
+                    "$ref": "#/definitions/domain.Tracklist"
                 },
                 "url": {
                     "type": "string"
