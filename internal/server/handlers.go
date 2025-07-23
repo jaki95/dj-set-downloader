@@ -114,19 +114,19 @@ func (s *Server) process(ctx context.Context, inputPath string, tracklist domain
 	results := make([]string, len(tracklist.Tracks))
 	errors := make([]error, len(tracklist.Tracks))
 
+	// Validate the requested file extension
+	if requestedExtension != "" {
+		if _, ok := audio.SupportedExtensions[requestedExtension]; !ok {
+			return nil, fmt.Errorf("%w: invalid file extension %s", audio.ErrInvalidExtension, requestedExtension)
+		}
+	}
+
 	// First, extract cover art from the original file
 	coverArtPath := filepath.Join(tempDir, "cover.jpg")
 	if err := s.audioProcessor.ExtractCoverArt(ctx, inputPath, coverArtPath); err != nil {
 		slog.Warn("Failed to extract cover art", "error", err)
 		// Continue without cover art
 		coverArtPath = ""
-	}
-
-	// Validate and sanitize maxConcurrentTasks to prevent excessive memory allocation
-	validatedMaxConcurrentTasks := job.ValidateMaxConcurrentTasks(maxConcurrentTasks)
-	if validatedMaxConcurrentTasks != maxConcurrentTasks {
-		slog.Warn("MaxConcurrentTasks value was capped for security",
-			"requested", maxConcurrentTasks, "capped_to", validatedMaxConcurrentTasks)
 	}
 
 	// Create a semaphore to limit concurrent tasks
