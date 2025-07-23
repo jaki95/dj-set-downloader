@@ -115,11 +115,16 @@ func (s *Server) process(ctx context.Context, inputPath string, tracklist domain
 	errors := make([]error, len(tracklist.Tracks))
 
 	// Validate and sanitize maxConcurrentTasks to prevent excessive memory allocation
-	maxConcurrentTasks = job.ValidateMaxConcurrentTasks(maxConcurrentTasks)
+	validatedMaxConcurrentTasks := job.ValidateMaxConcurrentTasks(maxConcurrentTasks)
+	if validatedMaxConcurrentTasks != maxConcurrentTasks {
+		slog.Warn("MaxConcurrentTasks value was capped for security",
+			"requested", maxConcurrentTasks, "capped_to", validatedMaxConcurrentTasks)
+	}
+	maxConcurrentTasks = validatedMaxConcurrentTasks
 
 	// Validate the requested file extension
 	if requestedExtension != "" {
-		if _, ok := audio.SupportedExtensions[requestedExtension]; !ok {
+		if _, ok := audio.SupportedExtensions[strings.ToLower(requestedExtension)]; !ok {
 			return nil, fmt.Errorf("%w: invalid file extension %s", audio.ErrInvalidExtension, requestedExtension)
 		}
 	}
