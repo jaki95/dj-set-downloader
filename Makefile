@@ -17,7 +17,13 @@ install-deps: ## Install all required dependencies
 	@echo "Installing swag for API documentation..."
 	@go install github.com/swaggo/swag/cmd/swag@latest
 	@echo "Installing OpenAPI Generator..."
-	@npm install -g @openapitools/openapi-generator-cli
+	@if command -v uv >/dev/null 2>&1; then \
+		echo "Installing with uv (includes jdk4py to avoid Java dependency)..."; \
+		uv tool install "openapi-generator-cli[jdk4py]"; \
+	else \
+		echo "Installing with pip (includes jdk4py to avoid Java dependency)..."; \
+		pip install "openapi-generator-cli[jdk4py]"; \
+	fi
 	@echo "Installing Python client dependencies..."
 	@if command -v uv >/dev/null 2>&1; then \
 		cd clients/python && uv sync; \
@@ -25,6 +31,7 @@ install-deps: ## Install all required dependencies
 		echo "uv not found, skipping Python dependencies"; \
 		echo "Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh"; \
 	fi
+	
 
 # Build targets
 build: ## Build the Go application
@@ -44,7 +51,7 @@ swagger-docs: ## Generate Swagger documentation from Go annotations
 	@echo "Files updated: docs/swagger.json, docs/swagger.yaml, docs/docs.go"
 
 python-client: swagger-docs ## Generate Python client from OpenAPI spec
-	@echo "Generating Python client..."
+	@echo "🐍 Generating Python client..."
 	@openapi-generator generate \
 		-i docs/swagger.json \
 		-g python \
