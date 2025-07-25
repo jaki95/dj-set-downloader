@@ -6,6 +6,11 @@ on:
       - main
     paths:
       - 'clients/python/**'
+      
+permissions:
+  contents: read
+  packages: write
+  actions: write
 
 jobs:
   publish:
