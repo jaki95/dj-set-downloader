@@ -8,7 +8,7 @@ on:
       - 'clients/python/**'
       
 permissions:
-  contents: read
+  contents: write
   packages: write
   actions: write
 
