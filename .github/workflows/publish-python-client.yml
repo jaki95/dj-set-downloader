@@ -28,6 +28,12 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v3
 
+      - name: Extract version from pyproject.toml
+        id: get_version
+        run: |
+          VERSION=$(grep -o 'version = "[^"]*"' clients/python/pyproject.toml | cut -d'"' -f2)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Build and publish package
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
@@ -37,8 +43,8 @@ jobs:
         uses: softprops/action-gh-release@v1
         if: success()
         with:
-          tag_name: python-client-v${{ github.run_number }}
-          name: Python Client Release v${{ github.run_number }}
+          tag_name: python-client-v${{ steps.get_version.outputs.version }}
+          name: Python Client Release v${{ steps.get_version.outputs.version }}
           body: |
             Automated release of Python client package.
             
