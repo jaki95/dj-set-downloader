@@ -8,6 +8,9 @@ on:
       - 'docs/**'
       - 'clients/python/**'
 
+permissions:
+  contents: read
+
 jobs:
   validate-client:
     runs-on: ubuntu-latest

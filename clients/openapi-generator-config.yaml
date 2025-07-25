@@ -1,5 +1,5 @@
 generateSourceCodeOnly: true
 packageName: dj_set_downloader
-packageVersion: "1.0.0"
+packageVersion: "0.1.2"
 projectName: dj-set-downloader
 hideGenerationTimestamp: true 
