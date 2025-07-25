@@ -1,0 +1,50 @@
+name: Validate Python Client
+
+on:
+  pull_request:
+    paths:
+      - 'internal/server/**'
+      - 'cmd/**'
+      - 'docs/**'
+      - 'clients/python/**'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-client:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Install dependencies
+        run: make install-deps
+
+      - name: Generate current swagger docs
+        run: make swagger-docs
+
+      - name: Generate Python client from current API
+        run: |
+          openapi-generator-cli generate \
+          -i docs/swagger.json \
+          -g python \
+          -o ./clients/python-temp \
+          -c ./clients/openapi-generator-config.yaml
+
+      - name: Compare generated client with committed version
+        run: |
+          # Compare the important generated files
+          if ! diff -r --exclude='.openapi-generator' clients/python/dj_set_downloader/ clients/python-temp/dj_set_downloader/ > /dev/null; then
+            echo "Python client is out of sync with API changes!"
+            echo "Run 'make python-client' to update the client"
+            exit 1
+          else
+            echo "Python client is up to date with API changes"
+          fi
+          
