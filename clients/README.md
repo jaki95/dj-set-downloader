@@ -105,4 +105,4 @@ Manual requirements:
 - **uv**: For Python package management (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
 - **PyPI token**: Set `UV_PUBLISH_TOKEN` environment variable or `PYPI_TOKEN` secret in GitHub
 
-> **Note**: We use `openapi-generator-cli[jdk4py]` which bundles its own Java runtime, so you don't need to install Java separately! 
+> **Note**: We use `openapi-generator-cli[jdk4py]` which bundles its own Java runtime, so you don't need to install Java separately! The command is `openapi-generator-cli` (with `-cli` suffix). 

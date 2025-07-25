@@ -52,7 +52,7 @@ swagger-docs: ## Generate Swagger documentation from Go annotations
 
 python-client: swagger-docs ## Generate Python client from OpenAPI spec
 	@echo "🐍 Generating Python client..."
-	@openapi-generator generate \
+	@openapi-generator-cli generate \
 		-i docs/swagger.json \
 		-g python \
 		-o ./clients/python \

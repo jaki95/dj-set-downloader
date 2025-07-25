@@ -31,7 +31,7 @@ jobs:
 
       - name: Generate Python client from current API
         run: |
-          openapi-generator generate \
+          openapi-generator-cli generate \
           -i docs/swagger.json \
           -g python \
           -o ./clients/python-temp \
