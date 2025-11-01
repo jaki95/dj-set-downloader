@@ -1,5 +1,3 @@
-// Package downloader provides functionality for downloading audio files from various sources.
-// It includes implementations for different platforms like SoundCloud.
 package downloader
 
 import (
@@ -16,24 +14,9 @@ import (
 	"time"
 )
 
-// Constants for SoundCloud downloader
-const (
-	// Default timeout for downloads
-	defaultDownloadTimeout = 30 * time.Minute
-
-	// Minimum file size to consider a download valid (1MB)
-	minValidFileSize = 1024 * 1024
-
-	// Supported audio file extensions
-	supportedAudioExtensions = ".mp3,.m4a,.wav,.flac"
-)
-
-// Error types for better error handling
+// Error types specific to SoundCloud downloader
 var (
 	ErrScdlNotAvailable = fmt.Errorf("scdl not available")
-	ErrNoAudioFiles     = fmt.Errorf("no audio files found")
-	ErrFileTooSmall     = fmt.Errorf("file too small")
-	ErrDownloadTimeout  = fmt.Errorf("download timeout")
 )
 
 // SoundCloudDownloader handles downloading from SoundCloud using scdl
