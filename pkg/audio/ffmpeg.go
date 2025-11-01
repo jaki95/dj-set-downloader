@@ -330,19 +330,26 @@ func (f *ffmpeg) addMetadataAndCover(ctx context.Context, inputPath, outputPath 
 
 	// Only add cover art if it exists
 	if opts.CoverArtPath != "" {
-		args = append(args, "-i", opts.CoverArtPath)
-		args = append(args, "-map", "0:a", "-map", "1:v")
-		args = append(args, "-c:a", "copy", "-c:v", "mjpeg")
-		args = append(args, "-disposition:v:0", "attached_pic")
+		args = append(args, []string{
+			"-i", opts.CoverArtPath,
+			"-map", "0:a",
+			"-map", "1:v",
+			"-c:a", "copy",
+			"-c:v", "mjpeg",
+			"-disposition:v:0", "attached_pic",
+		}...)
 	} else {
-		// No cover art, just copy audio
-		args = append(args, "-map", "0:a")
-		args = append(args, "-c:a", "copy")
+		args = append(args, []string{
+			"-map", "0:a",
+			"-c:a", "copy",
+		}...)
 	}
 
-	args = append(args, "-f", codecInfo.format)
-	args = append(args, "-movflags", "+faststart")
-	args = append(args, "-id3v2_version", defaultID3Version)
+	args = append(args, []string{
+		"-f", codecInfo.format,
+		"-movflags", "+faststart",
+		"-id3v2_version", defaultID3Version,
+	}...)
 
 	// Add standard metadata
 	metadata := map[string]string{
