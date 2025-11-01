@@ -310,6 +310,7 @@ func (f *ffmpeg) addMetadataAndCover(ctx context.Context, inputPath, outputPath 
 		"input", inputPath,
 		"output", outputPath,
 		"track", opts.Track.Name,
+		"hasCoverArt", opts.CoverArtPath != "",
 	)
 
 	ext := filepath.Ext(outputPath)
@@ -325,16 +326,30 @@ func (f *ffmpeg) addMetadataAndCover(ctx context.Context, inputPath, outputPath 
 	args := []string{
 		"-y",
 		"-i", inputPath,
-		"-i", opts.CoverArtPath,
-		"-map", "0:a",
-		"-map", "1:v",
-		"-c:a", "copy",
-		"-c:v", "mjpeg",
+	}
+
+	// Only add cover art if it exists
+	if opts.CoverArtPath != "" {
+		args = append(args, []string{
+			"-i", opts.CoverArtPath,
+			"-map", "0:a",
+			"-map", "1:v",
+			"-c:a", "copy",
+			"-c:v", "mjpeg",
+			"-disposition:v:0", "attached_pic",
+		}...)
+	} else {
+		args = append(args, []string{
+			"-map", "0:a",
+			"-c:a", "copy",
+		}...)
+	}
+
+	args = append(args, []string{
 		"-f", codecInfo.format,
-		"-disposition:v:0", "attached_pic",
 		"-movflags", "+faststart",
 		"-id3v2_version", defaultID3Version,
-	}
+	}...)
 
 	// Add standard metadata
 	metadata := map[string]string{
@@ -349,13 +364,15 @@ func (f *ffmpeg) addMetadataAndCover(ctx context.Context, inputPath, outputPath 
 		args = append(args, "-metadata", fmt.Sprintf("%s=%s", k, v))
 	}
 
-	// Add video stream metadata
-	videoMetadata := map[string]string{
-		"title":   "Album cover",
-		"comment": "Cover (front)",
-	}
-	for k, v := range videoMetadata {
-		args = append(args, "-metadata:s:v", fmt.Sprintf("%s=%s", k, v))
+	// Add video stream metadata only if cover art exists
+	if opts.CoverArtPath != "" {
+		videoMetadata := map[string]string{
+			"title":   "Album cover",
+			"comment": "Cover (front)",
+		}
+		for k, v := range videoMetadata {
+			args = append(args, "-metadata:s:v", fmt.Sprintf("%s=%s", k, v))
+		}
 	}
 
 	args = append(args, outputPath)

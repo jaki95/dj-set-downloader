@@ -19,15 +19,11 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-if command -v golangci-lint &> /dev/null; then
-    echo "Running golangci-lint..."
-    golangci-lint run ./...
-    if [ $? -ne 0 ]; then
-        echo "Error: golangci-lint found issues"
-        exit 1
-    fi
-else
-    echo "Warning: golangci-lint not found, skipping lint check"
+echo "Running golangci-lint..."
+go run github.com/golangci/golangci-lint/cmd/golangci-lint@latest run ./...
+if [ $? -ne 0 ]; then
+    echo "Error: golangci-lint found issues"
+    exit 1
 fi
 
 echo "Running tests..."

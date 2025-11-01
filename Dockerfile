@@ -1,4 +1,4 @@
-FROM golang:1.21-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates
 
@@ -30,7 +30,7 @@ RUN apk add --no-cache \
 
 # Install Python dependencies
 RUN pip3 install --no-cache-dir --break-system-packages --upgrade pip \
-    && pip3 install --no-cache-dir --break-system-packages scdl \
+    && pip3 install --no-cache-dir --break-system-packages scdl yt-dlp \
     && rm -rf /root/.cache/pip
 
 # Create non-root user
@@ -63,6 +63,7 @@ VOLUME ["/app/output"]
 # Verify installations
 RUN ffmpeg -version > /dev/null && \
     scdl --version > /dev/null && \
+    yt-dlp --version > /dev/null && \
     echo "All dependencies installed successfully"
 
 # Run the application

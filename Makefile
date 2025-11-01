@@ -24,6 +24,12 @@ install-deps: ## Install all required dependencies
 		echo "Installing with pip (includes jdk4py to avoid Java dependency)..."; \
 		pip install "openapi-generator-cli[jdk4py]"; \
 	fi
+	@echo "Installing Python dependencies for downloaders..."
+	@if command -v pip3 >/dev/null 2>&1; then \
+		pip3 install --user scdl yt-dlp; \
+	else \
+		echo "pip3 not found, please install Python and pip3"; \
+	fi
 	@echo "Installing Python client dependencies..."
 	@if command -v uv >/dev/null 2>&1; then \
 		cd clients/python && uv sync; \

@@ -1,5 +1,3 @@
-// Package downloader provides functionality for downloading audio files from various sources.
-// It includes implementations for different platforms like SoundCloud.
 package downloader
 
 import (
@@ -9,31 +7,15 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
 
-// Constants for SoundCloud downloader
-const (
-	// Default timeout for downloads
-	defaultDownloadTimeout = 30 * time.Minute
-
-	// Minimum file size to consider a download valid (1MB)
-	minValidFileSize = 1024 * 1024
-
-	// Supported audio file extensions
-	supportedAudioExtensions = ".mp3,.m4a,.wav,.flac"
-)
-
-// Error types for better error handling
+// Error types specific to SoundCloud downloader
 var (
 	ErrScdlNotAvailable = fmt.Errorf("scdl not available")
-	ErrNoAudioFiles     = fmt.Errorf("no audio files found")
-	ErrFileTooSmall     = fmt.Errorf("file too small")
-	ErrDownloadTimeout  = fmt.Errorf("download timeout")
 )
 
 // SoundCloudDownloader handles downloading from SoundCloud using scdl
@@ -200,12 +182,12 @@ func (d *SoundCloudDownloader) Download(ctx context.Context, url, outputDir stri
 	}
 
 downloadComplete:
-	downloadedFile, err := d.findDownloadedFile(outputDir)
+	downloadedFile, err := findDownloadedFile(outputDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to find downloaded file: %w", err)
 	}
 
-	if err := d.validateAudioFile(downloadedFile); err != nil {
+	if err := validateAudioFile(downloadedFile); err != nil {
 		return "", fmt.Errorf("downloaded file validation failed: %w", err)
 	}
 
@@ -257,66 +239,6 @@ func (d *SoundCloudDownloader) checkScdlAvailable() error {
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("%w: %v", ErrScdlNotAvailable, err)
 	}
-	return nil
-}
-
-// findDownloadedFile finds the most recently downloaded audio file in the directory
-func (d *SoundCloudDownloader) findDownloadedFile(outputDir string) (string, error) {
-	audioExtensions := strings.Split(supportedAudioExtensions, ",")
-	var mostRecentFile string
-	var mostRecentTime time.Time
-
-	err := filepath.Walk(outputDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if info.IsDir() {
-			return nil
-		}
-
-		ext := strings.ToLower(filepath.Ext(path))
-		for _, audioExt := range audioExtensions {
-			if ext == audioExt {
-				if info.ModTime().After(mostRecentTime) {
-					mostRecentTime = info.ModTime()
-					mostRecentFile = path
-				}
-				break
-			}
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return "", fmt.Errorf("error scanning output directory: %w", err)
-	}
-
-	if mostRecentFile == "" {
-		return "", fmt.Errorf("%w: in directory %s", ErrNoAudioFiles, outputDir)
-	}
-
-	return mostRecentFile, nil
-}
-
-// validateAudioFile checks if the downloaded file is a valid audio file
-func (d *SoundCloudDownloader) validateAudioFile(filepath string) error {
-	info, err := os.Stat(filepath)
-	if err != nil {
-		return fmt.Errorf("failed to stat file: %w", err)
-	}
-
-	if info.Size() == 0 {
-		return fmt.Errorf("%w: file is empty", ErrFileTooSmall)
-	}
-
-	if info.Size() < minValidFileSize {
-		return fmt.Errorf("%w: file size %d bytes is less than minimum %d bytes",
-			ErrFileTooSmall, info.Size(), minValidFileSize)
-	}
-
-	// TODO: Add more validation like checking file headers, etc.
 	return nil
 }
 
