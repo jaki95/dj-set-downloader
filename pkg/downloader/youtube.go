@@ -1,17 +1,14 @@
 package downloader
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -70,8 +67,6 @@ func (d *YouTubeDownloader) Download(ctx context.Context, url, outputDir string,
 		"--no-playlist",
 		"--force-overwrites",
 		"--no-warnings",
-		"--progress",
-		"--newline",
 		"--max-downloads", "1",
 	}
 
@@ -81,13 +76,9 @@ func (d *YouTubeDownloader) Download(ctx context.Context, url, outputDir string,
 	slog.Info("Executing yt-dlp command", "args", args)
 
 	var stdoutBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
 	cmd.Stdout = &stdoutBuf
-
-	// Create a pipe for stderr to read progress in real-time
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		return "", fmt.Errorf("failed to create stderr pipe: %w", err)
-	}
+	cmd.Stderr = &stderrBuf
 
 	if err := cmd.Start(); err != nil {
 		return "", fmt.Errorf("failed to start yt-dlp: %w", err)
@@ -95,31 +86,10 @@ func (d *YouTubeDownloader) Download(ctx context.Context, url, outputDir string,
 
 	slog.Info("yt-dlp process started, waiting for completion", "pid", cmd.Process.Pid)
 
-	// Channel for progress updates from stderr reader
-	progressChan := make(chan int, 1)
-	var stderrBuf bytes.Buffer
-
-	// Read stderr line-by-line in a goroutine to capture progress in real-time
-	go func() {
-		scanner := bufio.NewScanner(stderrPipe)
-		for scanner.Scan() {
-			line := scanner.Text()
-			stderrBuf.WriteString(line + "\n")
-
-			// Parse progress from the line
-			if progress := d.parseProgressFromLine(line); progress > 0 {
-				select {
-				case progressChan <- progress:
-				default:
-					// Channel full, skip this update
-				}
-			}
-		}
-		// Read any remaining data
-		if remaining, err := io.ReadAll(stderrPipe); err == nil {
-			stderrBuf.Write(remaining)
-		}
-	}()
+	// Notify client that download has started
+	if progressCallback != nil {
+		progressCallback(10, "Download initiated...", nil)
+	}
 
 	done := make(chan error, 1)
 	go func() {
@@ -128,66 +98,51 @@ func (d *YouTubeDownloader) Download(ctx context.Context, url, outputDir string,
 		done <- err
 	}()
 
-	progressPercent := 10
-	if progressCallback != nil {
-		progressCallback(progressPercent, "Download initiated...", nil)
-	}
-
-	for {
-		select {
-		case err := <-done:
-			if err != nil {
-				if exitError, ok := err.(*exec.ExitError); ok {
-					exitCode := exitError.ExitCode()
-					// Exit code 101 is used by yt-dlp when --max-downloads is reached (not an error)
-					if exitCode == 101 {
-						slog.Info("yt-dlp completed with max-downloads reached (normal)")
-						goto downloadComplete
-					}
-				}
-
-				slog.Error("yt-dlp command failed",
-					"error", err,
-					"stdout", stdoutBuf.String(),
-					"stderr", stderrBuf.String(),
-				)
-				return "", fmt.Errorf("yt-dlp download failed: %w\nstdout: %s\nstderr: %s",
-					err, stdoutBuf.String(), stderrBuf.String())
-			}
-			slog.Info("yt-dlp download completed successfully")
-			if progressCallback != nil {
-				progressCallback(100, "Download completed", nil)
-			}
-			goto downloadComplete
-		case <-ctx.Done():
-			slog.Warn("Context cancelled, killing yt-dlp process", "pid", cmd.Process.Pid)
-			if err := cmd.Process.Kill(); err != nil {
-				slog.Error("Failed to kill process after context cancellation", "error", err)
-			}
-			return "", ctx.Err()
-		case <-time.After(d.timeout):
-			slog.Error("Download timeout reached", "timeout", d.timeout, "pid", cmd.Process.Pid)
-			if err := cmd.Process.Kill(); err != nil {
-				slog.Error("Failed to kill process after timeout", "error", err)
-			}
-			return "", fmt.Errorf("%w: %v", ErrDownloadTimeout, d.timeout)
-		case newProgress := <-progressChan:
-			if newProgress > progressPercent {
-				progressPercent = newProgress
-				if progressCallback != nil {
-					progressCallback(progressPercent, fmt.Sprintf("Downloading... %d%%", progressPercent), nil)
+	select {
+	case err := <-done:
+		if err != nil {
+			if exitError, ok := err.(*exec.ExitError); ok {
+				exitCode := exitError.ExitCode()
+				// Exit code 101 is used by yt-dlp when --max-downloads is reached (not an error)
+				if exitCode == 101 {
+					slog.Info("yt-dlp completed with max-downloads reached (normal)")
+					goto downloadComplete
 				}
 			}
+
+			slog.Error("yt-dlp command failed",
+				"error", err,
+				"stdout", stdoutBuf.String(),
+				"stderr", stderrBuf.String(),
+			)
+			return "", fmt.Errorf("yt-dlp download failed: %w\nstdout: %s\nstderr: %s",
+				err, stdoutBuf.String(), stderrBuf.String())
 		}
+		slog.Info("yt-dlp download completed successfully")
+		if progressCallback != nil {
+			progressCallback(100, "Download completed", nil)
+		}
+	case <-ctx.Done():
+		slog.Warn("Context cancelled, killing yt-dlp process", "pid", cmd.Process.Pid)
+		if err := cmd.Process.Kill(); err != nil {
+			slog.Error("Failed to kill process after context cancellation", "error", err)
+		}
+		return "", ctx.Err()
+	case <-time.After(d.timeout):
+		slog.Error("Download timeout reached", "timeout", d.timeout, "pid", cmd.Process.Pid)
+		if err := cmd.Process.Kill(); err != nil {
+			slog.Error("Failed to kill process after timeout", "error", err)
+		}
+		return "", fmt.Errorf("%w: %v", ErrDownloadTimeout, d.timeout)
 	}
 
 downloadComplete:
-	downloadedFile, err := d.findDownloadedFile(outputDir)
+	downloadedFile, err := findDownloadedFile(outputDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to find downloaded file: %w", err)
 	}
 
-	if err := d.validateAudioFile(downloadedFile); err != nil {
+	if err := validateAudioFile(downloadedFile); err != nil {
 		return "", fmt.Errorf("downloaded file validation failed: %w", err)
 	}
 
@@ -232,83 +187,6 @@ func (d *YouTubeDownloader) cleanFilename(filename string) string {
 	}
 
 	return strings.TrimSpace(clean)
-}
-
-// parseProgressFromLine extracts progress percentage from a single yt-dlp output line
-// yt-dlp progress format: [download] 45.2% of 123.45MiB at 1.23MiB/s ETA 00:01:23
-func (d *YouTubeDownloader) parseProgressFromLine(line string) int {
-	// Look for the download progress pattern: [download] XX.X%
-	progressRegex := regexp.MustCompile(`\[download\]\s+(\d+(?:\.\d+)?)%`)
-	matches := progressRegex.FindStringSubmatch(line)
-
-	if len(matches) > 1 {
-		if percent, err := strconv.ParseFloat(matches[1], 64); err == nil {
-			if percent >= 0 && percent <= 100 {
-				return int(percent)
-			}
-		}
-	}
-
-	return 0
-}
-
-// findDownloadedFile finds the most recently downloaded audio file in the directory
-func (d *YouTubeDownloader) findDownloadedFile(outputDir string) (string, error) {
-	audioExtensions := strings.Split(supportedAudioExtensions, ",")
-	var mostRecentFile string
-	var mostRecentTime time.Time
-
-	err := filepath.Walk(outputDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if info.IsDir() {
-			return nil
-		}
-
-		ext := strings.ToLower(filepath.Ext(path))
-		for _, audioExt := range audioExtensions {
-			if ext == audioExt {
-				if info.ModTime().After(mostRecentTime) {
-					mostRecentTime = info.ModTime()
-					mostRecentFile = path
-				}
-				break
-			}
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return "", fmt.Errorf("error scanning output directory: %w", err)
-	}
-
-	if mostRecentFile == "" {
-		return "", fmt.Errorf("%w: in directory %s", ErrNoAudioFiles, outputDir)
-	}
-
-	return mostRecentFile, nil
-}
-
-// validateAudioFile checks if the downloaded file is a valid audio file
-func (d *YouTubeDownloader) validateAudioFile(filepath string) error {
-	info, err := os.Stat(filepath)
-	if err != nil {
-		return fmt.Errorf("failed to stat file: %w", err)
-	}
-
-	if info.Size() == 0 {
-		return fmt.Errorf("%w: file is empty", ErrFileTooSmall)
-	}
-
-	if info.Size() < minValidFileSize {
-		return fmt.Errorf("%w: file size %d bytes is less than minimum %d bytes",
-			ErrFileTooSmall, info.Size(), minValidFileSize)
-	}
-
-	return nil
 }
 
 // downloadAndEmbedThumbnail downloads the video thumbnail and embeds it as cover art
