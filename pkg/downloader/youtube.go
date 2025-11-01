@@ -68,6 +68,7 @@ func (d *YouTubeDownloader) Download(ctx context.Context, url, outputDir string,
 		"--force-overwrites",
 		"--no-warnings",
 		"--max-downloads", "1",
+		"--embed-thumbnail", // Embed thumbnail as cover art
 	}
 
 	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
@@ -146,12 +147,6 @@ downloadComplete:
 		return "", fmt.Errorf("downloaded file validation failed: %w", err)
 	}
 
-	// Download and embed thumbnail as cover art
-	if err := d.downloadAndEmbedThumbnail(ctx, url, downloadedFile, outputDir, cleanTitle); err != nil {
-		slog.Warn("Failed to download or embed thumbnail, continuing without cover art", "error", err)
-		// Continue without cover art - this is optional
-	}
-
 	slog.Info("Successfully downloaded from YouTube", "file", downloadedFile)
 	return downloadedFile, nil
 }
@@ -187,142 +182,4 @@ func (d *YouTubeDownloader) cleanFilename(filename string) string {
 	}
 
 	return strings.TrimSpace(clean)
-}
-
-// downloadAndEmbedThumbnail downloads the video thumbnail and embeds it as cover art
-func (d *YouTubeDownloader) downloadAndEmbedThumbnail(ctx context.Context, url, audioFile, outputDir, baseName string) error {
-	// Download thumbnail
-	thumbnailTemplate := filepath.Join(outputDir, baseName+".%(ext)s")
-	thumbnailArgs := []string{
-		url,
-		"--write-thumbnail",
-		"--skip-download",
-		"--output", thumbnailTemplate,
-		"--no-playlist",
-		"--force-overwrites",
-		"--no-warnings",
-	}
-
-	cmd := exec.CommandContext(ctx, "yt-dlp", thumbnailArgs...)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to download thumbnail: %w", err)
-	}
-
-	// Find the downloaded thumbnail file
-	thumbnailFile, err := d.findThumbnailFile(outputDir, baseName)
-	if err != nil {
-		return fmt.Errorf("failed to find thumbnail file: %w", err)
-	}
-	defer os.Remove(thumbnailFile) // Clean up thumbnail file after embedding
-
-	// Embed thumbnail into audio file using ffmpeg
-	return d.embedThumbnailWithFFmpeg(ctx, audioFile, thumbnailFile)
-}
-
-// findThumbnailFile finds the downloaded thumbnail file
-func (d *YouTubeDownloader) findThumbnailFile(outputDir, baseName string) (string, error) {
-	// yt-dlp can download thumbnails in various formats (jpg, png, webp, etc.)
-	thumbnailExtensions := []string{".jpg", ".jpeg", ".png", ".webp"}
-
-	for _, ext := range thumbnailExtensions {
-		thumbnailPath := filepath.Join(outputDir, baseName+ext)
-		if _, err := os.Stat(thumbnailPath); err == nil {
-			return thumbnailPath, nil
-		}
-	}
-
-	// Fallback: find any recently created image file in the directory
-	var mostRecentFile string
-	var mostRecentTime time.Time
-
-	err := filepath.Walk(outputDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if info.IsDir() {
-			return nil
-		}
-
-		ext := strings.ToLower(filepath.Ext(path))
-		for _, thumbnailExt := range thumbnailExtensions {
-			if ext == thumbnailExt {
-				if info.ModTime().After(mostRecentTime) {
-					mostRecentTime = info.ModTime()
-					mostRecentFile = path
-				}
-				break
-			}
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return "", fmt.Errorf("error scanning for thumbnail: %w", err)
-	}
-
-	if mostRecentFile == "" {
-		return "", fmt.Errorf("thumbnail file not found")
-	}
-
-	return mostRecentFile, nil
-}
-
-// embedThumbnailWithFFmpeg embeds the thumbnail into the audio file as cover art
-func (d *YouTubeDownloader) embedThumbnailWithFFmpeg(ctx context.Context, audioFile, thumbnailFile string) error {
-	ext := strings.ToLower(filepath.Ext(audioFile))
-	if ext != "" {
-		ext = ext[1:] // Remove leading dot
-	}
-
-	// Determine format
-	var format string
-	switch ext {
-	case "mp3":
-		format = "mp3"
-	case "m4a":
-		format = "mp4"
-	case "wav":
-		format = "wav"
-	case "flac":
-		format = "flac"
-	default:
-		return fmt.Errorf("unsupported audio format: %s", ext)
-	}
-
-	// Create temporary output file
-	tempOutput := audioFile + ".tmp"
-	defer os.Remove(tempOutput)
-
-	args := []string{
-		"-y",
-		"-i", audioFile,
-		"-i", thumbnailFile,
-		"-map", "0:a",
-		"-map", "1:v",
-		"-c:a", "copy",
-		"-c:v", "mjpeg",
-		"-disposition:v:0", "attached_pic",
-		"-f", format,
-		"-movflags", "+faststart",
-		"-id3v2_version", "3",
-		"-metadata:s:v", "title=Album cover",
-		"-metadata:s:v", "comment=Cover (front)",
-		tempOutput,
-	}
-
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("ffmpeg failed to embed thumbnail: %w\noutput: %s", err, string(output))
-	}
-
-	// Replace original file with the one containing cover art
-	if err := os.Rename(tempOutput, audioFile); err != nil {
-		return fmt.Errorf("failed to replace original file: %w", err)
-	}
-
-	slog.Info("Successfully embedded thumbnail as cover art", "file", audioFile)
-	return nil
 }
